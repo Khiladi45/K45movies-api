@@ -225,7 +225,7 @@ var init_meta = __esm({
         link,
         providerContext
       }) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d;
         const { axios } = providerContext;
         const slug = link.replace(/^https?:\/\/[^/]+\//, "").replace(/^\//, "").split("/")[0];
         const detailRes = yield axios.get(`${BASE_URL2}/api/show/${slug}`, { headers: headers2 });
@@ -262,6 +262,19 @@ var init_meta = __esm({
               episodes = episodes.concat(remainingPages.flat());
             }
             if (episodes.length > 0) {
+              if (lang !== "ja-JP") {
+                try {
+                  const firstEp = episodes[0];
+                  const checkRes = yield axios.get(
+                    `${BASE_URL2}/api/show/${slug}/episode/ep-${firstEp.episode_string}-${firstEp.slug}`,
+                    { headers: headers2 }
+                  );
+                  if (!((_d = checkRes.data) == null ? void 0 : _d.servers) || checkRes.data.servers.length === 0) {
+                    continue;
+                  }
+                } catch (e) {
+                }
+              }
               const directLinks = episodes.map((ep) => {
                 const epTitle = `Episode ${ep.episode_string}${ep.title ? ` - ${ep.title}` : ""}`;
                 return {
@@ -334,14 +347,19 @@ var init_stream = __esm({
         link,
         providerContext
       }) {
-        var _a, _b;
+        var _a, _b, _c, _d;
         const { axios } = providerContext;
         let epApiUrl = link;
+        let epParsed = null;
         if (link.startsWith("{")) {
           try {
             const parsed = JSON.parse(link);
-            const { slug, epNum, epSlug } = parsed;
-            epApiUrl = `${BASE_URL3}/api/show/${slug}/episode/ep-${epNum}-${epSlug}`;
+            epParsed = parsed;
+            const slug = parsed.slug;
+            const epNum = parsed.epNum;
+            const epSlug = parsed.epSlug;
+            const num = epNum || "1";
+            epApiUrl = epSlug ? `${BASE_URL3}/api/show/${slug}/episode/ep-${num}-${epSlug}` : `${BASE_URL3}/api/show/${slug}/episode/ep-${num}`;
           } catch (e) {
           }
         }
@@ -349,14 +367,42 @@ var init_stream = __esm({
         try {
           const srvRes = yield axios.get(epApiUrl, { headers: defaultHeaders });
           servers = ((_a = srvRes.data) == null ? void 0 : _a.servers) || [];
+          if (servers.length === 0 && (epParsed == null ? void 0 : epParsed.slug) && epParsed.lang && epParsed.lang !== "ja-JP") {
+            try {
+              const num = epParsed.epNum || "1";
+              const jaRes = yield axios.get(
+                `${BASE_URL3}/api/show/${epParsed.slug}/episodes?page=1&lang=ja-JP`,
+                { headers: defaultHeaders }
+              );
+              const jaEps = ((_b = jaRes.data) == null ? void 0 : _b.result) || [];
+              const matching = jaEps.find(
+                (e) => String(e.episode_string) === String(num) || String(e.episode_number) === String(num)
+              );
+              if (matching == null ? void 0 : matching.slug) {
+                const fallbackRes = yield axios.get(
+                  `${BASE_URL3}/api/show/${epParsed.slug}/episode/ep-${num}-${matching.slug}`,
+                  { headers: defaultHeaders }
+                );
+                servers = ((_c = fallbackRes.data) == null ? void 0 : _c.servers) || [];
+              }
+            } catch (e) {
+            }
+          }
         } catch (e) {
+          return [];
+        }
+        if (servers.length === 0) {
           return [];
         }
         const streams = [];
         for (const srv of servers) {
           if (!srv.src) continue;
           try {
-            const playerUrl = fixUrl(srv.src, BASE_URL3);
+            let src = srv.src;
+            if (src.includes("/cat-player/vast")) {
+              src = src.replace("/cat-player/vast", "/cat-player/player");
+            }
+            const playerUrl = fixUrl(src, BASE_URL3);
             const playerRes = yield axios.get(playerUrl, {
               headers: __spreadProps(__spreadValues({}, defaultHeaders), {
                 Referer: `${BASE_URL3}/`
@@ -364,9 +410,10 @@ var init_stream = __esm({
             });
             const html = typeof playerRes.data === "string" ? playerRes.data : JSON.stringify(playerRes.data);
             const cleanHtml = html.replace(/&quot;/g, '"');
-            const manifestMatch = cleanHtml.match(/manifest":\[0,"(?:https?:)?(\/\/[^"]+)"]/);
-            if (manifestMatch) {
-              let rawManifest = manifestMatch[1];
+            const manifestMatch = cleanHtml.match(/manifest":\[\d+,"(?:https?:)?(\/\/[^"]+)"]/);
+            const directManifestMatch = manifestMatch || cleanHtml.match(/manifest":\[\d+,"([^"]+)"]/);
+            if (directManifestMatch) {
+              const rawManifest = directManifestMatch[1].split("\\").join("");
               const manifestUrl = fixUrl(rawManifest, playerUrl);
               let origin = "";
               try {
@@ -385,15 +432,16 @@ var init_stream = __esm({
               while ((tMatch = trackRegex.exec(cleanHtml)) !== null) {
                 const lang = tMatch[1];
                 const subName = tMatch[2];
-                let subSrc = tMatch[3].replace(/\\\//g, "/");
+                const subSrc = tMatch[3].split("\\").join("");
                 const subUrl = fixUrl(subSrc, playerUrl);
-                const proxyUrl = `https://worker.zendax.me/api/fetch?url=${encodeURIComponent(
+                const proxyUrl = `https://fetch.1proxy.workers.dev/fetch?url=${encodeURIComponent(
                   subUrl
                 )}&headers=${encodeURIComponent(JSON.stringify(hlsHeaders))}`;
+                const isSrt = subUrl.toLowerCase().includes(".srt");
                 subtitles.push({
                   title: `${subName} (${lang})`,
                   language: lang,
-                  type: "text/vtt",
+                  type: isSrt ? "application/x-subrip" : "text/vtt",
                   uri: proxyUrl
                 });
               }
@@ -415,7 +463,7 @@ var init_stream = __esm({
                     if (line.startsWith("#EXT-X-STREAM-INF")) {
                       const resMatch = line.match(/RESOLUTION=\d+x(\d+)/);
                       const quality = resMatch ? `${resMatch[1]}p` : "unknown";
-                      const nextLine = (_b = lines[i + 1]) == null ? void 0 : _b.trim();
+                      const nextLine = (_d = lines[i + 1]) == null ? void 0 : _d.trim();
                       if (nextLine && !nextLine.startsWith("#")) {
                         const streamUrl = nextLine.startsWith("http") ? nextLine : baseUrl + nextLine;
                         streams.push({
@@ -431,7 +479,7 @@ var init_stream = __esm({
                   }
                 } catch (e) {
                 }
-              } else if (manifestUrl.includes(".mpd")) {
+              } else if (manifestUrl.includes(".mpd") || playerUrl.includes("type=dash")) {
                 streams.push({
                   server: `${srv.name} (DASH)`,
                   link: manifestUrl,
@@ -440,6 +488,25 @@ var init_stream = __esm({
                   subtitles: subtitles.length > 0 ? subtitles : void 0,
                   headers: hlsHeaders
                 });
+              }
+              continue;
+            }
+            const sourcesMatch = cleanHtml.match(/sources:\s*(\[[^\]]+\])/);
+            if (sourcesMatch) {
+              try {
+                const sources = JSON.parse(sourcesMatch[1]);
+                for (const s of sources) {
+                  if (s.file) {
+                    const streamUrl = fixUrl(s.file, playerUrl);
+                    streams.push({
+                      server: `${srv.name} (${s.label || "default"})`,
+                      link: streamUrl,
+                      type: streamUrl.includes(".m3u8") ? "m3u8" : "mp4",
+                      quality: s.label || "unknown"
+                    });
+                  }
+                }
+              } catch (e) {
               }
             }
           } catch (e) {

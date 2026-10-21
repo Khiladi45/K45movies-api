@@ -3,6 +3,7 @@ import {
   CinemetaMeta,
   CinemetaVideo,
   enrichCinemetaEpisodes,
+  formatEpisodeTitle,
   getCinemetaMeta,
 } from "../getCinemetaMeta";
 import { enrichEpisodesWithSkipTimings } from "../theintrodb";
@@ -45,24 +46,47 @@ export const getMeta = async function ({
   try {
     const { imdbId, type } = getRequest(link);
     const meta = await getCinemetaMeta(imdbId, type, providerContext);
+    if (!meta) {
+      return {
+        title: imdbId,
+        synopsis: "",
+        image: "",
+        imdbId,
+        type,
+        linkList: [],
+      };
+    }
     const linkList: Link[] = [];
 
     if (type === "series") {
       const seasons = new Map<number, EpisodeLink[]>();
+      const now = Date.now();
       for (const video of meta.videos || []) {
         const episode = video.episode ?? video.number;
         if (!video.season || video.season <= 0 || !episode) continue;
+
+        // Filter out unreleased future episodes
+        const releaseStr = video.released || video.firstAired;
+        if (releaseStr) {
+          const releaseTime = new Date(releaseStr).getTime();
+          if (!isNaN(releaseTime) && releaseTime > now) {
+            continue;
+          }
+        }
+
         const episodes = seasons.get(video.season) || [];
         episodes.push({
-          title: `Episode ${episode}`,
+          title: formatEpisodeTitle(episode, video.name),
           link: createPayload(imdbId, "series", meta, video),
         });
         seasons.set(video.season, episodes);
       }
       const skipTimings = await providerContext.kvStore?.get<boolean>("autoEmbed_skipTimings");
       for (const season of [...seasons.keys()].sort((a, b) => a - b)) {
+        const seasonEpisodes = seasons.get(season) || [];
+        if (seasonEpisodes.length === 0) continue;
         let directLinks = enrichCinemetaEpisodes(
-          seasons.get(season) || [],
+          seasonEpisodes,
           meta.videos || [],
           season,
         );

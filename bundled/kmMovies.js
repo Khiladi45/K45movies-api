@@ -120,7 +120,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue) => __async(null, null, function* () {
       var _a, _b;
@@ -307,40 +307,73 @@ function getCache2() {
   }
   return state.__vegaCinemetaCache__;
 }
-function getCinemetaMeta(imdbId, type, providerContext) {
-  if (!/^tt\d+$/.test(imdbId)) {
-    return Promise.reject(new Error(`Invalid IMDb ID: ${imdbId}`));
-  }
-  const cache = getCache2();
-  const cached = cache[imdbId];
-  if (cached) {
-    if (isCinemetaPromise(cached)) {
-      return cached;
-    }
-    if (cached.name && cached.imdb_id === imdbId) {
-      return Promise.resolve(cached);
-    }
-    delete cache[imdbId];
-  }
-  const mediaType = type === "series" ? "series" : "movie";
-  const url = `${CINEMETA_BASE_URL}/${mediaType}/${imdbId}.json`;
-  const request = providerContext.axios.get(url).then((response) => {
+function resolveTmdbToImdb(tmdbId, type, providerContext) {
+  return __async(this, null, function* () {
     var _a;
-    const meta = (_a = response.data) == null ? void 0 : _a.meta;
-    if (!(meta == null ? void 0 : meta.name) || meta.imdb_id !== imdbId) {
-      throw new Error(`Cinemeta returned invalid metadata for ${imdbId}`);
+    try {
+      const tmdbType = type === "series" ? "tv" : "movie";
+      const res = yield providerContext.axios.get(
+        `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/external_ids?api_key=cfe422613b250f702980a3bbf9e90716`,
+        { timeout: 5e3 }
+      );
+      const imdb = (_a = res.data) == null ? void 0 : _a.imdb_id;
+      if (typeof imdb === "string" && /^tt\d+$/.test(imdb)) {
+        return imdb;
+      }
+    } catch (e) {
     }
-    cache[imdbId] = meta;
-    return meta;
-  }).catch((error) => {
-    delete cache[imdbId];
-    throw error;
+    return null;
   });
-  cache[imdbId] = request;
-  return request;
+}
+function getCinemetaMeta(id, type, providerContext) {
+  return __async(this, null, function* () {
+    var _a;
+    if (!id || typeof id !== "string") {
+      return null;
+    }
+    let cleanImdbId = (_a = id.match(/tt\d+/)) == null ? void 0 : _a[0];
+    if (!cleanImdbId) {
+      const tmdbMatch = id.match(/(?:themoviedb\.org\/(?:movie|tv)\/|tmdb:?)(\d+)/i) || id.match(/^(\d+)$/);
+      if (tmdbMatch) {
+        cleanImdbId = (yield resolveTmdbToImdb(tmdbMatch[1], type, providerContext)) || void 0;
+      }
+    }
+    if (!cleanImdbId) {
+      return null;
+    }
+    const cache = getCache2();
+    const cached = cache[cleanImdbId];
+    if (cached) {
+      if (isCinemetaPromise(cached)) {
+        return cached;
+      }
+      if (cached.name && cached.imdb_id === cleanImdbId) {
+        return cached;
+      }
+      delete cache[cleanImdbId];
+    }
+    const mediaType = type === "series" ? "series" : "movie";
+    const url = `${CINEMETA_BASE_URL}/${mediaType}/${cleanImdbId}.json`;
+    const request = providerContext.axios.get(url, { timeout: 8e3 }).then((response) => {
+      var _a2;
+      const meta = (_a2 = response.data) == null ? void 0 : _a2.meta;
+      if (!(meta == null ? void 0 : meta.name) || meta.imdb_id !== cleanImdbId) {
+        delete cache[cleanImdbId];
+        return null;
+      }
+      cache[cleanImdbId] = meta;
+      return meta;
+    }).catch(() => {
+      delete cache[cleanImdbId];
+      return null;
+    });
+    cache[cleanImdbId] = request;
+    return request;
+  });
 }
 function applyCinemetaMeta(info, meta) {
   var _a;
+  if (!meta) return info;
   return __spreadProps(__spreadValues({}, info), {
     title: meta.name || info.title,
     image: meta.background || meta.poster || info.image,
@@ -409,13 +442,17 @@ function getEpisodeNumber(title, season) {
     ...title.matchAll(/\bs\d{1,2}\s*e(\d{1,3})\b/gi),
     ...title.matchAll(/\bepisodes?\s*:?\s*(\d{1,3})\b/gi),
     ...title.matchAll(/\bep\s*\.?:?\s*(\d{1,3})\b/gi),
-    ...title.matchAll(/\be(\d{1,3})\b/gi)
+    ...title.matchAll(/\be(\d{1,3})\b/gi),
+    ...title.matchAll(/^\s*(\d{1,3})\s*[.:-]\s*/gi)
   ].map((match) => Number(match[1]));
   const episodes = [...new Set(matches.filter((episode) => episode > 0))];
   return episodes.length === 1 ? episodes[0] : void 0;
 }
 function enrichCinemetaEpisodes(episodes, videos, season) {
   var _a;
+  if (!videos || !Array.isArray(videos) || videos.length === 0 || !season) {
+    return episodes;
+  }
   const videosByEpisode = /* @__PURE__ */ new Map();
   let hasDuplicateVideo = false;
   for (const video of videos) {
@@ -573,7 +610,7 @@ var init_meta = __esm({
     init_providerErrors();
     init_getCinemetaMeta();
     kmmHeaders = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
       Pragma: "no-cache",
@@ -586,10 +623,11 @@ var init_meta = __esm({
       }) {
         var _a, _b, _c, _d, _e, _f;
         try {
-          const { axios, cheerio, openWebView } = providerContext;
+          const { axios, cheerio, openWebView, commonHeaders } = providerContext;
+          const reqHeaders = __spreadValues(__spreadValues({}, kmmHeaders), commonHeaders || {});
           const baseUrl = yield getBaseUrl("kmmovies");
           const pageUrl = resolvePostUrl(link, baseUrl);
-          const res = yield getWithWAF2(pageUrl, axios, openWebView, kmmHeaders);
+          const res = yield getWithWAF2(pageUrl, axios, openWebView, reqHeaders);
           const html = String(res.data || "");
           const $ = cheerio.load(html);
           const overview = $("#movie-overview");
@@ -631,18 +669,25 @@ var init_meta = __esm({
             webUrl: pageUrl
           };
           if (!imdbId) return websiteInfo;
-          const cinemeta = yield getCinemetaMeta(imdbId, type, providerContext);
-          if (type === "series" && cinemeta.type === "series") {
-            websiteInfo.linkList = websiteInfo.linkList.map((item) => {
-              if (!item.episodesLink) return item;
-              const season = getCinemetaSeason(item.title) || getCinemetaSeason(title);
-              if (!season) return item;
-              return __spreadProps(__spreadValues({}, item), {
-                episodesLink: addCinemetaContext(item.episodesLink, imdbId, season)
-              });
-            });
+          try {
+            const cinemeta = yield getCinemetaMeta(imdbId, type, providerContext);
+            if (cinemeta) {
+              if (type === "series" && cinemeta.type === "series") {
+                websiteInfo.linkList = websiteInfo.linkList.map((item) => {
+                  if (!item.episodesLink) return item;
+                  const season = getCinemetaSeason(item.title) || getCinemetaSeason(title);
+                  if (!season) return item;
+                  return __spreadProps(__spreadValues({}, item), {
+                    episodesLink: addCinemetaContext(item.episodesLink, imdbId, season)
+                  });
+                });
+              }
+              return applyCinemetaMeta(websiteInfo, cinemeta);
+            }
+          } catch (e) {
+            console.warn("KMMovies: Cinemeta lookup failed", e);
           }
-          return applyCinemetaMeta(websiteInfo, cinemeta);
+          return websiteInfo;
         } catch (err) {
           throwProviderError("KMMovies", "metadata", err);
         }
@@ -809,48 +854,6 @@ var init_gofile = __esm({
 });
 
 // providers/extractors/hubcloud.ts
-function checkStreamHealth(stream, signal) {
-  return __async(this, null, function* () {
-    if (!(stream == null ? void 0 : stream.link)) return false;
-    const reqHeaders = __spreadValues({
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
-    }, stream.headers || {});
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4e3);
-      if (signal) {
-        signal.addEventListener("abort", () => controller.abort(), { once: true });
-      }
-      const res = yield fetch(stream.link, {
-        method: "HEAD",
-        headers: reqHeaders,
-        signal: controller.signal,
-        redirect: "follow"
-      });
-      clearTimeout(timeoutId);
-      if (res.status >= 200 && res.status < 400) {
-        return true;
-      }
-      if (res.status === 405 || res.status === 403) {
-        const getController = new AbortController();
-        const getTimeoutId = setTimeout(() => getController.abort(), 4e3);
-        if (signal) {
-          signal.addEventListener("abort", () => getController.abort(), { once: true });
-        }
-        const getRes = yield fetch(stream.link, {
-          method: "GET",
-          headers: __spreadProps(__spreadValues({}, reqHeaders), { Range: "bytes=0-0" }),
-          signal: getController.signal
-        });
-        clearTimeout(getTimeoutId);
-        return getRes.status >= 200 && getRes.status < 400;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  });
-}
 function resolveGofileLink(gofileLink, axios, providerContext) {
   return __async(this, null, function* () {
     try {
@@ -876,7 +879,7 @@ function resolveGofileLink(gofileLink, axios, providerContext) {
 }
 function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerContext, isDownload, providerValue) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
       if (!headers3["Cookie"]) {
         headers3["Cookie"] = "ext_name=ojplmecpdpgccookcobabopnaifgidhf; xla=s4t; cf_clearance=woQrFGXtLfmEMBEiGUsVHrUBMT8s3cmguIzmMjmvpkg-1770053679-1.2.1.1-xBrQdciOJsweUF6F2T_OtH6jmyanN_TduQ0yslc_XqjU6RcHSxI7.YOKv6ry7oYo64868HYoULnVyww536H2eVI3R2e4wKzsky6abjPdfQPxqpUaXjxfJ02o6jl3_Vkwr4uiaU7Wy596Vdst3y78HXvVmKdIohhtPvp.vZ9_L7wvWdce0GRixjh_6JiqWmWMws46hwEt3hboaS1e1e4EoWCvj5b0M_jVwvSxBOAW5emFzvT3QrnRh4nyYmKDERnY";
@@ -895,11 +898,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
               `hubcloudExtractor: WAF detected (403) for ${link}, using solver...`
             );
             const cleanHeaders = __spreadProps(__spreadValues({}, headers3), { Referer: baseUrl });
-            delete cleanHeaders["User-Agent"];
-            delete cleanHeaders["sec-ch-ua"];
-            delete cleanHeaders["sec-ch-ua-mobile"];
-            delete cleanHeaders["sec-ch-ua-platform"];
-            delete cleanHeaders["Cookie"];
             const wafResult = yield openWebView(baseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -956,11 +954,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
             );
             const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
             const cleanHeaders2 = __spreadProps(__spreadValues({}, headers3), { Referer: vcloudBaseUrl });
-            delete cleanHeaders2["User-Agent"];
-            delete cleanHeaders2["sec-ch-ua"];
-            delete cleanHeaders2["sec-ch-ua-mobile"];
-            delete cleanHeaders2["sec-ch-ua-platform"];
-            delete cleanHeaders2["Cookie"];
             const wafResult = yield openWebView(vcloudBaseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -973,48 +966,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
             const retryRes = yield axios.get(vcloudLink, { headers: headers3, signal });
             vcloudText = retryRes.data;
           } else {
-            if (((_c = error.response) == null ? void 0 : _c.status) === 403 && !openWebView) {
-              console.log(
-                `hubcloudExtractor: 403 Forbidden for ${vcloudLink}, but openWebView solver is not available!`
-              );
-            }
-            let fetchRes = yield fetch(vcloudLink, {
-              headers: headers3,
-              signal,
-              redirect: "follow"
-            });
-            if (fetchRes.status === 403 && openWebView) {
-              console.log(
-                `hubcloudExtractor: WAF detected (403) for ${vcloudLink}, using solver...`
-              );
-              const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
-              const cleanHeaders3 = __spreadProps(__spreadValues({}, headers3), { Referer: vcloudBaseUrl });
-              delete cleanHeaders3["User-Agent"];
-              delete cleanHeaders3["sec-ch-ua"];
-              delete cleanHeaders3["sec-ch-ua-mobile"];
-              delete cleanHeaders3["sec-ch-ua-platform"];
-              delete cleanHeaders3["Cookie"];
-              const wafResult = yield openWebView(vcloudBaseUrl, {
-                title: "Solve the captcha below and click done",
-                description: "Required to bypass anti-bot protection.",
-                headers: cleanHeaders3,
-                waitForCookie: "cf_clearance",
-                force: true
-              });
-              if (wafResult.userAgent) headers3["User-Agent"] = wafResult.userAgent;
-              headers3["Cookie"] = (headers3["Cookie"] ? headers3["Cookie"] + "; " : "") + wafResult.cookies;
-              fetchRes = yield fetch(vcloudLink, {
-                headers: headers3,
-                signal,
-                redirect: "follow"
-              });
-            }
-            if (!fetchRes.ok) {
-              throw new Error(
-                `HTTP ${fetchRes.status} ${fetchRes.statusText} | URL ${vcloudLink}`
-              );
-            }
-            vcloudText = yield fetchRes.text();
+            throw error;
           }
         }
       }
@@ -1038,7 +990,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
                 );
                 link2 = redirectedPixelDrainUrl;
               }
-              const token = (_d = link2.split("/").pop()) == null ? void 0 : _d.split("?")[0];
+              const token = (_c = link2.split("/").pop()) == null ? void 0 : _c.split("?")[0];
               const baseUrl2 = link2.split("/").slice(0, -2).join("/");
               link2 = `${baseUrl2}/api/file/${token}?download`;
             }
@@ -1049,36 +1001,52 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
             break;
           case ((link2 == null ? void 0 : link2.includes("hubcloud")) || (link2 == null ? void 0 : link2.includes("/?id="))):
             try {
-              const newLinkRes = yield fetch(link2, {
-                method: "HEAD",
-                headers: headers3,
-                signal,
-                redirect: "manual"
-              });
               let newLink = link2;
-              if (newLinkRes.status >= 300 && newLinkRes.status < 400) {
-                newLink = newLinkRes.headers.get("location") || link2;
-              } else if (newLinkRes.url && newLinkRes.url !== link2) {
-                newLink = newLinkRes.url;
-              } else {
-                newLink = newLinkRes.headers.get("location") || link2;
-              }
-              if (newLink.includes("googleusercontent")) {
-                newLink = newLink.split("?link=")[1];
-              } else {
-                const newLinkRes2 = yield fetch(newLink, {
-                  method: "HEAD",
-                  headers: headers3,
-                  signal,
-                  redirect: "manual"
-                });
-                if (newLinkRes2.status >= 300 && newLinkRes2.status < 400) {
-                  newLink = ((_e = newLinkRes2.headers.get("location")) == null ? void 0 : _e.split("?link=")[1]) || newLink;
-                } else if (newLinkRes2.url && newLinkRes2.url !== newLink) {
-                  newLink = newLinkRes2.url.split("?link=")[1] || newLinkRes2.url;
-                } else {
-                  newLink = ((_f = newLinkRes2.headers.get("location")) == null ? void 0 : _f.split("?link=")[1]) || newLink;
+              try {
+                if (typeof fetch !== "undefined") {
+                  const fRes = yield fetch(link2, {
+                    headers: headers3,
+                    signal,
+                    redirect: "follow"
+                  });
+                  if (fRes.url && fRes.url.includes("googleusercontent")) {
+                    newLink = fRes.url.split("?link=")[1] || fRes.url;
+                  } else if (fRes.url && fRes.url !== link2) {
+                    newLink = fRes.url;
+                  }
                 }
+              } catch (e) {
+              }
+              if (!newLink.includes("googleusercontent")) {
+                try {
+                  const res1 = yield axios.get(newLink, {
+                    headers: headers3,
+                    signal,
+                    maxRedirects: 0,
+                    validateStatus: (s) => s >= 200 && s < 400
+                  });
+                  if ((_d = res1.headers) == null ? void 0 : _d["location"]) {
+                    newLink = res1.headers["location"];
+                  }
+                  if (newLink.includes("googleusercontent")) {
+                    newLink = newLink.split("?link=")[1] || newLink;
+                  } else if (newLink.includes("http")) {
+                    const res2 = yield axios.get(newLink, {
+                      headers: headers3,
+                      signal,
+                      maxRedirects: 0,
+                      validateStatus: (s) => s >= 200 && s < 400
+                    });
+                    if ((_e = res2.headers) == null ? void 0 : _e["location"]) {
+                      const loc2 = res2.headers["location"];
+                      newLink = loc2.includes("?link=") ? loc2.split("?link=")[1] : loc2;
+                    }
+                  }
+                } catch (e) {
+                }
+              }
+              if (newLink.includes("?link=")) {
+                newLink = newLink.split("?link=")[1] || newLink;
               }
               streamLinks.push({
                 server: "GDrive (download only)",
@@ -1123,7 +1091,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
       let preferredServer = "auto";
       try {
         const specificKey = providerValue ? `${providerValue}_preferredDownloadServer` : "";
-        preferredServer = ((specificKey ? yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get(specificKey) : void 0) || (yield (_h = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _h.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
+        preferredServer = ((specificKey ? yield (_f = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _f.get(specificKey) : void 0) || (yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
       } catch (e) {
       }
       const getPriority = (serverName = "") => {
@@ -1132,49 +1100,26 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
           return 0;
         }
         if (isDownload) {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage") || s.includes("resumable")) return 2;
-          if (s.includes("gdrive") || s.includes("instant")) return 3;
+          if (s.includes("cf storage") || s.includes("storage") || s.includes("resumable")) return 1;
+          if (s.includes("gdrive") || s.includes("google") || s.includes("instant")) return 2;
+          if (s.includes("pixeldrain")) return 3;
           if (s.includes("gofile")) return 4;
-          if (s.includes("pixeldrain")) return 5;
-          if (s.includes("fastdl")) return 6;
-          if (s.includes("hubcdn")) return 7;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
+          if (s.includes("hubcdn")) return 6;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 8;
           return 10;
         } else {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage")) return 2;
+          if (s.includes("cf storage") || s.includes("storage")) return 1;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 2;
           if (s.includes("gofile")) return 3;
           if (s.includes("pixeldrain")) return 4;
-          if (s.includes("fastdl")) return 5;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
           if (s.includes("hubcdn")) return 6;
-          if (s.includes("gdrive")) return 7;
+          if (s.includes("gdrive") || s.includes("google")) return 7;
           return 10;
         }
       };
       streamLinks.sort((a, b) => getPriority(a.server) - getPriority(b.server));
-      if (isDownload && streamLinks.length > 0) {
-        const isTopHealthy = yield checkStreamHealth(
-          streamLinks[0],
-          signal
-        );
-        if (!isTopHealthy) {
-          let healthyIndex = -1;
-          for (let i = 1; i < streamLinks.length; i++) {
-            const isHealthy = yield checkStreamHealth(
-              streamLinks[i],
-              signal
-            );
-            if (isHealthy) {
-              healthyIndex = i;
-              break;
-            }
-          }
-          if (healthyIndex > 0) {
-            const [workingStream] = streamLinks.splice(healthyIndex, 1);
-            streamLinks.unshift(workingStream);
-          }
-        }
-      }
       console.log("streamLinks", streamLinks);
       return streamLinks;
     } catch (error) {
@@ -1289,7 +1234,10 @@ function getWithWAF3(url, axios, openWebView) {
           waitForCookie: "cf_clearance"
         });
         return yield axios.get(url, {
-          headers: __spreadProps(__spreadValues({}, headers), { Referer: baseUrl, Cookie: wafResult.cookies }),
+          headers: __spreadProps(__spreadValues({}, headers), {
+            Referer: baseUrl,
+            Cookie: wafResult.cookies || wafResult.cookie
+          }),
           responseType: "text"
         });
       }
@@ -1328,103 +1276,235 @@ function captureRedirect(url, axios, requestHeaders) {
 }
 function resolveZipZap(link, axios, cheerio, commonHeaders) {
   return __async(this, null, function* () {
-    const downloadUrl = new URL(link);
-    const requestHeaders = __spreadProps(__spreadValues(__spreadValues({}, headers), commonHeaders), {
-      Referer: downloadUrl.origin
-    });
-    const pageResponse = yield axios.get(downloadUrl.href, {
-      headers: requestHeaders
-    });
-    const $ = cheerio.load(pageResponse.data);
-    const r2Href = $("a[href*='dl=r2']").first().attr("href");
-    if (!r2Href) return null;
-    const r2Url = new URL(r2Href, downloadUrl);
-    const rawUrl = yield captureRedirect(r2Url.href, axios, __spreadProps(__spreadValues({}, requestHeaders), {
-      Referer: downloadUrl.href
-    }));
-    return rawUrl ? { server: "ZIP-ZAP", link: rawUrl, type: "mkv" } : null;
+    try {
+      const downloadUrl = new URL(link);
+      const requestHeaders = __spreadProps(__spreadValues(__spreadValues({}, headers), commonHeaders), {
+        Referer: downloadUrl.origin
+      });
+      const pageResponse = yield axios.get(downloadUrl.href, {
+        headers: requestHeaders
+      });
+      const $ = cheerio.load(pageResponse.data);
+      const r2Href = $("a[href*='dl=r2']").first().attr("href");
+      if (!r2Href) return null;
+      const r2Url = new URL(r2Href, downloadUrl);
+      const rawUrl = yield captureRedirect(r2Url.href, axios, __spreadProps(__spreadValues({}, requestHeaders), {
+        Referer: downloadUrl.href
+      }));
+      return rawUrl ? { server: "ZIP-ZAP", link: rawUrl, type: "mkv" } : null;
+    } catch (err) {
+      console.log("resolveZipZap error:", (err == null ? void 0 : err.message) || err);
+      return null;
+    }
   });
 }
 function resolveBuzzheavier(link, axios, cheerio, commonHeaders) {
   return __async(this, null, function* () {
     var _a, _b;
-    const origin = new URL(link).origin;
-    const requestHeaders = __spreadProps(__spreadValues(__spreadValues({}, browserHeaders), commonHeaders), {
-      Referer: origin
-    });
-    const pageResponse = yield axios.get(link, { headers: requestHeaders });
-    const $ = cheerio.load(pageResponse.data);
-    const downloadPath = $("a.download-btn").attr("hx-get");
-    if (!downloadPath) return null;
-    const downloadUrl = new URL(downloadPath, origin).href;
-    const setCookie = (_a = pageResponse.headers) == null ? void 0 : _a["set-cookie"];
-    const cookie = (Array.isArray(setCookie) ? setCookie : [setCookie]).filter(Boolean).map((value) => value.split(";", 1)[0]).join("; ");
-    const downloadResponse = yield axios.head(downloadUrl, {
-      headers: __spreadValues(__spreadProps(__spreadValues({}, requestHeaders), {
-        Referer: link,
-        "HX-Request": "true",
-        "HX-Current-URL": link
-      }), cookie ? { Cookie: cookie } : {}),
-      validateStatus: (status) => status >= 200 && status < 300
-    });
-    const redirectUrl = (_b = downloadResponse.headers) == null ? void 0 : _b["hx-redirect"];
-    if (!redirectUrl) return null;
-    return {
-      server: "BUZZHEAVIER",
-      link: new URL(redirectUrl, origin).href,
-      type: "mkv",
-      headers: {
-        Referer: link,
-        "User-Agent": requestHeaders["User-Agent"]
-      }
-    };
+    try {
+      const origin = new URL(link).origin;
+      const requestHeaders = __spreadProps(__spreadValues(__spreadValues({}, browserHeaders), commonHeaders), {
+        Referer: origin
+      });
+      const pageResponse = yield axios.get(link, { headers: requestHeaders });
+      const $ = cheerio.load(pageResponse.data);
+      const downloadPath = $("a.download-btn").attr("hx-get");
+      if (!downloadPath) return null;
+      const downloadUrl = new URL(downloadPath, origin).href;
+      const setCookie = (_a = pageResponse.headers) == null ? void 0 : _a["set-cookie"];
+      const cookie = (Array.isArray(setCookie) ? setCookie : [setCookie]).filter(Boolean).map((value) => value.split(";", 1)[0]).join("; ");
+      const downloadResponse = yield axios.head(downloadUrl, {
+        headers: __spreadValues(__spreadProps(__spreadValues({}, requestHeaders), {
+          Referer: link,
+          "HX-Request": "true",
+          "HX-Current-URL": link
+        }), cookie ? { Cookie: cookie } : {}),
+        validateStatus: (status) => status >= 200 && status < 300
+      });
+      const redirectUrl = (_b = downloadResponse.headers) == null ? void 0 : _b["hx-redirect"];
+      if (!redirectUrl) return null;
+      return {
+        server: "BUZZHEAVIER",
+        link: new URL(redirectUrl, origin).href,
+        type: "mkv",
+        headers: {
+          Referer: link,
+          "User-Agent": requestHeaders["User-Agent"]
+        }
+      };
+    } catch (err) {
+      console.log("resolveBuzzheavier error:", (err == null ? void 0 : err.message) || err);
+      return null;
+    }
   });
 }
-function resolveSkyDrop(link, axios) {
+function resolveSkyDrop(link, axios, providerContext) {
   return __async(this, null, function* () {
-    var _a;
-    const skyDropUrl = new URL(link);
-    const id = skyDropUrl.searchParams.get("id");
-    if (!id) return null;
-    const response = yield axios.get(`${skyDropUrl.origin}/api.php`, {
-      params: { id },
-      headers
-    });
-    if (!((_a = response.data) == null ? void 0 : _a.success) || !response.data.link) return null;
-    return { server: "SkyDrop", link: response.data.link, type: "mkv" };
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s;
+    try {
+      const skyDropUrl = new URL(link);
+      const origin = skyDropUrl.origin;
+      const id = skyDropUrl.searchParams.get("id");
+      if (!id) return null;
+      const reqHeaders = __spreadProps(__spreadValues({}, headers), {
+        Referer: link,
+        Origin: origin,
+        "X-Requested-With": "XMLHttpRequest"
+      });
+      const getRes = yield axios.get(link, { headers: reqHeaders });
+      let setCookie = ((_a = getRes.headers) == null ? void 0 : _a["set-cookie"]) || ((_b = getRes.headers) == null ? void 0 : _b["Set-Cookie"]) || ((_c = getRes.headers) == null ? void 0 : _c["x-set-cookie"]) || ((_d = getRes.headers) == null ? void 0 : _d["X-Set-Cookie"]) || (typeof ((_e = getRes.headers) == null ? void 0 : _e.get) === "function" ? getRes.headers.get("x-set-cookie") || getRes.headers.get("set-cookie") : "");
+      if (!setCookie && (providerContext == null ? void 0 : providerContext.openWebView)) {
+        try {
+          const waf = yield providerContext.openWebView(link, {
+            headers: reqHeaders,
+            waitForCookie: "skydrop_download"
+          });
+          if (waf == null ? void 0 : waf.cookies) {
+            setCookie = waf.cookies;
+          }
+        } catch (e) {
+        }
+      }
+      if (setCookie) {
+        const cookieHeader = (Array.isArray(setCookie) ? setCookie : [setCookie]).map((c) => c.split(";")[0]).join("; ");
+        reqHeaders["Cookie"] = cookieHeader;
+      }
+      const resolveRes = yield axios.post(
+        `${origin}/resolve/`,
+        {},
+        { headers: reqHeaders }
+      );
+      if (((_f = resolveRes.data) == null ? void 0 : _f.success) && ((_g = resolveRes.data) == null ? void 0 : _g.ready_url)) {
+        const readyUrl = new URL(resolveRes.data.ready_url, origin).href;
+        const readyRes = yield axios.get(readyUrl, {
+          headers: __spreadProps(__spreadValues({}, reqHeaders), {
+            Referer: link
+          })
+        });
+        const extraCookieRaw = ((_h = readyRes.headers) == null ? void 0 : _h["set-cookie"]) || ((_i = readyRes.headers) == null ? void 0 : _i["Set-Cookie"]) || (typeof ((_j = readyRes.headers) == null ? void 0 : _j.get) === "function" ? readyRes.headers.get("set-cookie") : "");
+        if (extraCookieRaw) {
+          const extraCookie = (Array.isArray(extraCookieRaw) ? extraCookieRaw : [extraCookieRaw]).map((c) => c.split(";")[0]).join("; ");
+          reqHeaders["Cookie"] = (reqHeaders["Cookie"] ? reqHeaders["Cookie"] + "; " : "") + extraCookie;
+        }
+        let finalLocation = "";
+        try {
+          const fetchRes = yield axios.post(
+            `${origin}/fetch/`,
+            {},
+            {
+              headers: __spreadProps(__spreadValues({}, reqHeaders), {
+                Referer: readyUrl
+              }),
+              maxRedirects: 0,
+              validateStatus: (status) => status >= 200 && status < 400
+            }
+          );
+          const loc = ((_k = fetchRes.headers) == null ? void 0 : _k.location) || ((_l = fetchRes.headers) == null ? void 0 : _l["location"]) || (typeof ((_m = fetchRes.headers) == null ? void 0 : _m.get) === "function" ? fetchRes.headers.get("location") : "") || ((_n = fetchRes.request) == null ? void 0 : _n.responseURL) || "";
+          if (loc && (loc.includes("http") || loc.startsWith("/"))) {
+            finalLocation = new URL(loc, origin).href;
+          }
+        } catch (err) {
+          const loc = ((_p = (_o = err.response) == null ? void 0 : _o.headers) == null ? void 0 : _p.location) || ((_r = (_q = err.response) == null ? void 0 : _q.headers) == null ? void 0 : _r["location"]) || ((_s = err.request) == null ? void 0 : _s.responseURL);
+          if (loc && (loc.includes("http") || loc.startsWith("/"))) {
+            finalLocation = new URL(loc, origin).href;
+          }
+        }
+        if (!finalLocation && typeof fetch !== "undefined") {
+          const controller = new AbortController();
+          try {
+            const fRes = yield fetch(`${origin}/fetch/`, {
+              method: "POST",
+              headers: __spreadProps(__spreadValues({}, reqHeaders), {
+                Referer: readyUrl
+              }),
+              signal: controller.signal
+            });
+            if (fRes.url && fRes.url.includes("googleusercontent")) {
+              finalLocation = fRes.url;
+            } else if (fRes.headers.get("location")) {
+              finalLocation = fRes.headers.get("location") || "";
+            }
+          } catch (e) {
+          } finally {
+            controller.abort();
+          }
+        }
+        if (finalLocation && finalLocation.includes("googleusercontent")) {
+          return {
+            server: "G-Drive (download only)",
+            link: finalLocation,
+            type: "mkv"
+          };
+        }
+        return {
+          server: finalLocation ? "G-Drive (download only)" : "SkyDrop (download only)",
+          link: finalLocation || `${origin}/fetch/`,
+          type: "mkv",
+          headers: __spreadProps(__spreadValues({
+            Referer: readyUrl
+          }, reqHeaders["Cookie"] ? { Cookie: reqHeaders["Cookie"] } : {}), {
+            "User-Agent": headers["User-Agent"]
+          })
+        };
+      }
+    } catch (err) {
+      console.log("resolveSkyDrop error:", (err == null ? void 0 : err.message) || err);
+    }
+    return null;
   });
 }
 function resolveGofile(link, axios, providerContext) {
   return __async(this, null, function* () {
-    const gofileUrl = new URL(link);
-    const id = gofileUrl.pathname.split("/").filter(Boolean).pop();
-    if (!id) return null;
-    const result = yield gofileExtractor(id, axios, providerContext);
-    if (!(result == null ? void 0 : result.link) || !(result == null ? void 0 : result.token)) return null;
-    return {
-      server: "Gofile",
-      link: result.link,
-      type: "mkv",
-      headers: {
-        Referer: "https://gofile.io/",
-        Cookie: `accountToken=${result.token}`
-      }
-    };
+    try {
+      if (!link.includes("gofile.io")) return null;
+      const gofileUrl = new URL(link);
+      const id = gofileUrl.pathname.split("/").filter(Boolean).pop();
+      if (!id || id.endsWith(".php") || id.endsWith(".html")) return null;
+      const result = yield gofileExtractor(id, axios, providerContext);
+      if (!(result == null ? void 0 : result.link) || !(result == null ? void 0 : result.token)) return null;
+      return {
+        server: "Gofile",
+        link: result.link,
+        type: "mkv",
+        headers: {
+          Referer: "https://gofile.io/",
+          Cookie: `accountToken=${result.token}`
+        }
+      };
+    } catch (err) {
+      console.log("resolveGofile error:", (err == null ? void 0 : err.message) || err);
+      return null;
+    }
   });
 }
 function resolveHubcloud(link, signal, axios, cheerio, commonHeaders, providerContext, isDownload) {
   return __async(this, null, function* () {
-    const streams = yield hubcloudExtractor(
-      link,
-      signal,
-      axios,
-      cheerio,
-      __spreadValues(__spreadValues({}, headers), commonHeaders),
-      providerContext,
-      isDownload,
-      "kmMovies"
-    );
-    return streams.find((stream) => stream == null ? void 0 : stream.link) || null;
+    try {
+      const streams = yield hubcloudExtractor(
+        link,
+        signal,
+        axios,
+        cheerio,
+        __spreadValues(__spreadProps(__spreadValues({}, headers), {
+          Referer: link
+        }), commonHeaders),
+        providerContext
+      );
+      if (!(streams == null ? void 0 : streams.length)) return null;
+      if (isDownload) {
+        streams.sort((a, b) => {
+          const aIsDownload = a.server.toLowerCase().includes("download");
+          const bIsDownload = b.server.toLowerCase().includes("download");
+          if (aIsDownload && !bIsDownload) return -1;
+          if (!aIsDownload && bIsDownload) return 1;
+          return 0;
+        });
+      }
+      return streams[0];
+    } catch (err) {
+      console.log("resolveHubcloud error:", (err == null ? void 0 : err.message) || err);
+      return null;
+    }
   });
 }
 function getStream(_0) {
@@ -1437,13 +1517,10 @@ function getStream(_0) {
   }) {
     const { axios, cheerio, openWebView, commonHeaders } = providerContext;
     try {
-      const res = yield getWithWAF3(link, axios, openWebView);
-      const $ = cheerio.load(res.data);
-      const downloadLinks = extractDownloadLinks($);
       const resolvers = {
         "ZIP-ZAP": (l) => resolveZipZap(l, axios, cheerio, commonHeaders || {}),
         BUZZHEAVIER: (l) => resolveBuzzheavier(l, axios, cheerio, commonHeaders || {}),
-        SKYDROP: (l) => resolveSkyDrop(l, axios),
+        SKYDROP: (l) => resolveSkyDrop(l, axios, providerContext),
         GOFILE: (l) => resolveGofile(l, axios, providerContext),
         HUBCLOUD: (l) => resolveHubcloud(
           l,
@@ -1455,27 +1532,37 @@ function getStream(_0) {
           isDownload
         )
       };
+      for (const [server, matches] of Object.entries(SERVER_PATTERNS)) {
+        if (matches("", link)) {
+          try {
+            const stream = yield resolvers[server](link);
+            if (stream) return [stream];
+          } catch (err) {
+            console.log(`Direct ${server} check failed:`, (err == null ? void 0 : err.message) || err);
+          }
+        }
+      }
+      const res = yield getWithWAF3(link, axios, openWebView);
+      const $ = cheerio.load(res.data);
+      const downloadLinks = extractDownloadLinks($);
       const streams = [];
       const seen = /* @__PURE__ */ new Set();
       const resolverFailures = [];
-      for (const server of [
-        "ZIP-ZAP",
-        "BUZZHEAVIER",
-        "SKYDROP",
-        "GOFILE",
-        "HUBCLOUD"
-      ]) {
-        for (const { link: link2 } of downloadLinks.filter((d) => d.server === server)) {
+      const serverOrder = isDownload ? ["SKYDROP", "ZIP-ZAP", "BUZZHEAVIER", "GOFILE", "HUBCLOUD"] : ["ZIP-ZAP", "BUZZHEAVIER", "GOFILE", "HUBCLOUD", "SKYDROP"];
+      for (const server of serverOrder) {
+        for (const { link: dlLink } of downloadLinks.filter(
+          (d) => d.server === server
+        )) {
           try {
-            const stream = yield resolvers[server](link2);
+            const stream = yield resolvers[server](dlLink);
             if (stream && !seen.has(stream.link)) {
               seen.add(stream.link);
               streams.push(stream);
               break;
             }
           } catch (error) {
-            console.log(`${server} failed:`, error.message);
-            resolverFailures.push(`${server}: ${error.message || String(error)}`);
+            console.log(`${server} failed:`, (error == null ? void 0 : error.message) || error);
+            resolverFailures.push(`${server}: ${(error == null ? void 0 : error.message) || String(error)}`);
           }
         }
       }
@@ -1498,7 +1585,7 @@ var init_stream = __esm({
     init_hubcloud();
     init_providerErrors();
     headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
       Pragma: "no-cache",
@@ -1509,7 +1596,7 @@ var init_stream = __esm({
       "Accept-Language": "en-US,en;q=0.9,en-IN;q=0.8",
       DNT: "1",
       Priority: "u=0, i",
-      "Sec-CH-UA": '"Not;A=Brand";v="8", "Chromium";v="150", "Microsoft Edge";v="150"',
+      "Sec-CH-UA": '"Not;A=Brand";v="8", "Chromium";v="131", "Microsoft Edge";v="131"',
       "Sec-CH-UA-Mobile": "?0",
       "Sec-CH-UA-Platform": '"Windows"',
       "Sec-Fetch-Dest": "document",
@@ -1522,7 +1609,7 @@ var init_stream = __esm({
       "ZIP-ZAP": (name, href) => name.includes("ZIP-ZAP") || href.includes("kmphotos.cv/download"),
       BUZZHEAVIER: (name, href) => name.includes("BUZZHEAVIER") || name.includes("BUZZHIEVER") || href.includes("bzzhr.co"),
       SKYDROP: (name, href) => name.includes("SKYDROP") || href.includes("skydrop.sbs/"),
-      GOFILE: (name, href) => name.includes("GOFILE") || href.includes("gofile.io/"),
+      GOFILE: (name, href) => href.includes("gofile.io/") || name.includes("GOFILE") && !href.includes(".php"),
       HUBCLOUD: (name, href) => name.includes("HUBCLOUD") || href.includes("hubcloud.")
     };
   }
@@ -1725,24 +1812,35 @@ var init_episodes = __esm({
               quickDownload: quickDownload != null ? quickDownload : true
             }));
           }
-          const cinemeta = yield getCinemetaMeta(
-            context.imdbId,
-            "series",
-            providerContext
-          );
-          let enriched = enrichCinemetaEpisodes(
-            episodes,
-            cinemeta.videos || [],
-            context.season
-          );
-          const skipTimings = yield (_b = providerContext.kvStore) == null ? void 0 : _b.get("kmMovies_skipTimings");
-          if (skipTimings != null ? skipTimings : true) {
-            enriched = yield enrichEpisodesWithSkipTimings(
-              enriched,
+          let enriched = episodes;
+          try {
+            const cinemeta = yield getCinemetaMeta(
               context.imdbId,
-              context.season,
+              "series",
               providerContext
             );
+            if (cinemeta) {
+              enriched = enrichCinemetaEpisodes(
+                episodes,
+                cinemeta.videos || [],
+                context.season
+              );
+            }
+          } catch (e) {
+            console.warn("KMMovies: Cinemeta episode lookup failed", e);
+          }
+          const skipTimings = yield (_b = providerContext.kvStore) == null ? void 0 : _b.get("kmMovies_skipTimings");
+          if (skipTimings != null ? skipTimings : true) {
+            try {
+              enriched = yield enrichEpisodesWithSkipTimings(
+                enriched,
+                context.imdbId,
+                context.season,
+                providerContext
+              );
+            } catch (e) {
+              console.warn("KMMovies: Skip timings lookup failed", e);
+            }
           }
           return enriched.map((e) => __spreadProps(__spreadValues({}, e), {
             quickDownload: quickDownload != null ? quickDownload : true

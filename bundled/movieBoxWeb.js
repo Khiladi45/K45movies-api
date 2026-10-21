@@ -75,69 +75,12 @@ var init_catalog = __esm({
   }
 });
 
-// providers/getBaseUrl.ts
-function getCache() {
-  var _a;
-  const state = typeof providerGlobal !== "undefined" && providerGlobal ? providerGlobal : globalThis;
-  (_a = state.__vegaProviderBaseUrlCache__) != null ? _a : state.__vegaProviderBaseUrlCache__ = { expiresAt: 0 };
-  return state.__vegaProviderBaseUrlCache__;
-}
-function fetchProviderUrls() {
+// providers/movieBoxWeb/utils.ts
+function getProviderBaseUrl() {
   return __async(this, null, function* () {
-    const cache = getCache();
-    if (cache.data && Date.now() < cache.expiresAt) {
-      return cache.data;
-    }
-    if (cache.request) {
-      return cache.request;
-    }
-    const request = fetch(urlsEndpoint).then((response) => __async(null, null, function* () {
-      if (!response.ok) {
-        throw new Error(`URL configuration request failed: ${response.status}`);
-      }
-      const data = yield response.json();
-      console.log("Fetched provider URL configuration");
-      cache.data = data;
-      cache.expiresAt = Date.now() + cacheTtl;
-      return data;
-    })).catch((error) => {
-      if (cache.data) {
-        console.warn("Using stale provider URL configuration", error);
-        return cache.data;
-      }
-      throw error;
-    }).finally(() => {
-      cache.request = void 0;
-    });
-    Object.defineProperty(cache, "request", {
-      configurable: true,
-      enumerable: false,
-      value: request,
-      writable: true
-    });
-    return request;
+    return defaultBaseUrl;
   });
 }
-var urlsEndpoint, cacheTtl, getBaseUrl;
-var init_getBaseUrl = __esm({
-  "providers/getBaseUrl.ts"() {
-    "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
-    cacheTtl = 60 * 60 * 1e3;
-    getBaseUrl = (providerValue2) => __async(null, null, function* () {
-      var _a, _b;
-      try {
-        const providerUrls = yield fetchProviderUrls();
-        return (_b = (_a = providerUrls[providerValue2]) == null ? void 0 : _a.url) != null ? _b : "";
-      } catch (error) {
-        console.error(`Error fetching baseUrl: ${providerValue2}`, error);
-        throw error;
-      }
-    });
-  }
-});
-
-// providers/movieBoxWeb/utils.ts
 function parseNuxtDetail(html, cheerio) {
   return findDetail(parseNuxtData(html, cheerio));
 }
@@ -220,7 +163,21 @@ function encodeLink(value) {
   return JSON.stringify(value);
 }
 function decodeLink(value) {
-  return JSON.parse(value);
+  if (value && typeof value === "object") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch (e) {
+    const dp = detailPath(String(value || ""));
+    return {
+      subjectId: "",
+      detailPath: dp,
+      language: "Original",
+      season: 1,
+      episode: 1
+    };
+  }
 }
 function detailPath(link) {
   return link.replace(/^https?:\/\/[^/]+/, "").replace(/^\/moviesDetail\//, "");
@@ -228,11 +185,11 @@ function detailPath(link) {
 function absoluteUrl(baseUrl, path) {
   return new URL(path, `${baseUrl}/`).toString();
 }
-var providerValue;
+var defaultBaseUrl;
 var init_utils = __esm({
   "providers/movieBoxWeb/utils.ts"() {
     "use strict";
-    providerValue = "movieBoxWeb";
+    defaultBaseUrl = "https://officialmoviebox.com";
   }
 });
 
@@ -263,7 +220,7 @@ function collectSubjectPreviews(value) {
 }
 function fetchPosts(path, signal, providerContext) {
   return __async(this, null, function* () {
-    const baseUrl = yield getBaseUrl(providerValue);
+    const baseUrl = yield getProviderBaseUrl();
     const response = yield fetch(absoluteUrl(baseUrl, path), { signal });
     if (!response.ok) throw new Error(`MovieBox Web returned ${response.status}`);
     const html = yield response.text();
@@ -305,7 +262,7 @@ function mapSubjects(subjects) {
 function fetchCatalogPage(filter, page, signal) {
   return __async(this, null, function* () {
     var _a;
-    const baseUrl = yield getBaseUrl(providerValue);
+    const baseUrl = yield getProviderBaseUrl();
     const params = new URLSearchParams({
       page: String(Math.max(1, page)),
       perPage: String(pageSize)
@@ -342,7 +299,6 @@ var pageSize, requestHeaders, getPosts, getSearchPosts;
 var init_posts = __esm({
   "providers/movieBoxWeb/posts.ts"() {
     "use strict";
-    init_getBaseUrl();
     init_utils();
     pageSize = 18;
     requestHeaders = {
@@ -418,16 +374,30 @@ __export(meta_exports, {
   getMeta: () => getMeta
 });
 function buildPlaybackLink(subject, dub, seasons) {
-  var _a, _b;
+  var _a, _b, _c, _d;
+  const isSeries = subject.subjectType === 2;
   const movieSeason = (seasons == null ? void 0 : seasons.find((season) => season.se === 0)) || (seasons == null ? void 0 : seasons[0]);
+  const firstSeriesSeason = (seasons == null ? void 0 : seasons.find((season) => (season.se || 0) > 0)) || (seasons == null ? void 0 : seasons[0]);
   const movieResolution = (_b = (_a = movieSeason == null ? void 0 : movieSeason.resolutions) == null ? void 0 : _a.filter((item) => (item.epNum || 0) >= 1).sort((a, b) => (b.resolution || 0) - (a.resolution || 0))[0]) == null ? void 0 : _b.resolution;
+  const targetSubjectId = dub.subjectId || subject.subjectId || "";
+  const targetDetailPath = dub.detailPath || subject.detailPath || "";
+  const alternateDub = ((_c = subject.dubs) == null ? void 0 : _c.find(
+    (d) => {
+      var _a2;
+      return d.subjectId && d.subjectId !== targetSubjectId && (d.original || ((_a2 = d.lanName) == null ? void 0 : _a2.toLowerCase().includes("original")) || d.lanCode === "en");
+    }
+  )) || ((_d = subject.dubs) == null ? void 0 : _d.find((d) => d.subjectId && d.subjectId !== targetSubjectId));
+  const fallbackSubjectId = subject.subjectId && subject.subjectId !== targetSubjectId ? subject.subjectId : alternateDub == null ? void 0 : alternateDub.subjectId;
+  const fallbackDetailPath = subject.detailPath && subject.detailPath !== targetDetailPath ? subject.detailPath : alternateDub == null ? void 0 : alternateDub.detailPath;
   return encodeLink({
-    subjectId: dub.subjectId || subject.subjectId || "",
-    detailPath: dub.detailPath || subject.detailPath || "",
+    subjectId: targetSubjectId,
+    detailPath: targetDetailPath,
+    fallbackSubjectId,
+    fallbackDetailPath,
     language: dub.lanName || dub.lanCode || "Original",
-    season: subject.subjectType === 2 ? void 0 : (movieSeason == null ? void 0 : movieSeason.se) || 0,
-    episode: subject.subjectType === 2 ? void 0 : 1,
-    resolution: subject.subjectType === 2 ? void 0 : movieResolution,
+    season: isSeries ? (firstSeriesSeason == null ? void 0 : firstSeriesSeason.se) || 1 : (movieSeason == null ? void 0 : movieSeason.se) || 0,
+    episode: 1,
+    resolution: isSeries ? void 0 : movieResolution,
     seasons
   });
 }
@@ -435,7 +405,6 @@ var getMeta;
 var init_meta = __esm({
   "providers/movieBoxWeb/meta.ts"() {
     "use strict";
-    init_getBaseUrl();
     init_providerErrors();
     init_utils();
     getMeta = function(_0) {
@@ -445,7 +414,7 @@ var init_meta = __esm({
       }) {
         var _a, _b, _c, _d;
         try {
-          const baseUrl = yield getBaseUrl(providerValue);
+          const baseUrl = yield getProviderBaseUrl();
           const pageUrl = absoluteUrl(baseUrl, `/moviesDetail/${detailPath(link)}`);
           const response = yield fetch(pageUrl);
           if (!response.ok) {
@@ -543,56 +512,187 @@ function mapCaptions(captions) {
     };
   });
 }
-function getCaptions(baseUrl, playback, stream, referer) {
-  return __async(this, null, function* () {
-    var _a;
-    if (!stream.id || !stream.format) return [];
-    const params = new URLSearchParams({
-      format: stream.format,
-      id: stream.id,
-      subjectId: playback.subjectId,
-      detailPath: playback.detailPath
-    });
-    const url = absoluteUrl(
-      baseUrl,
-      `/wefeed-h5api-bff/subject/caption?${params}`
-    );
-    const response = yield fetch(url, {
-      headers: __spreadProps(__spreadValues({}, requestHeaders2), { Referer: referer })
-    });
-    if (!response.ok) {
-      throw new Error(
-        `HTTP ${response.status} ${response.statusText} | URL ${url}`
+function getCaptions(_0, _1, _2, _3) {
+  return __async(this, arguments, function* (baseUrl, playback, stream, referer, userAgent = defaultUserAgent, providerContext, signal) {
+    var _a, _b, _c;
+    try {
+      if (!stream.id || !stream.format) return [];
+      const params = new URLSearchParams({
+        format: stream.format,
+        id: stream.id,
+        subjectId: playback.subjectId,
+        detailPath: playback.detailPath
+      });
+      const url = absoluteUrl(
+        baseUrl,
+        `/wefeed-h5api-bff/subject/caption?${params}`
       );
+      const headers = __spreadProps(__spreadValues({}, requestHeaders2), { "User-Agent": userAgent, Referer: referer });
+      if (providerContext == null ? void 0 : providerContext.axios) {
+        const res = yield providerContext.axios.get(url, {
+          headers,
+          signal,
+          timeout: 1e4,
+          validateStatus: () => true
+        });
+        if (res.status >= 200 && res.status < 300) {
+          return mapCaptions(((_b = (_a = res.data) == null ? void 0 : _a.data) == null ? void 0 : _b.captions) || []);
+        }
+        return [];
+      }
+      const response = yield fetch(url, { headers, signal });
+      if (!response.ok) return [];
+      const data = yield response.json();
+      return mapCaptions(((_c = data == null ? void 0 : data.data) == null ? void 0 : _c.captions) || []);
+    } catch (e) {
+      return [];
     }
-    const data = yield response.json();
-    return mapCaptions(((_a = data == null ? void 0 : data.data) == null ? void 0 : _a.captions) || []);
   });
 }
-var requestHeaders2, getStream;
+function hasPlayableStreams(result) {
+  var _a, _b, _c, _d;
+  if (!result || result.noContent || result.code !== 0 || ((_a = result.data) == null ? void 0 : _a.hasResource) === false) {
+    return false;
+  }
+  const sources = [
+    ...((_b = result.data) == null ? void 0 : _b.streams) || [],
+    ...((_c = result.data) == null ? void 0 : _c.hls) || [],
+    ...((_d = result.data) == null ? void 0 : _d.dash) || []
+  ];
+  return sources.some((s) => Boolean((s == null ? void 0 : s.url) && !(s == null ? void 0 : s.vipLocked)));
+}
+function checkPlaybackLimit(result) {
+  var _a;
+  if (((_a = result == null ? void 0 : result.data) == null ? void 0 : _a.limited) && !hasPlayableStreams(result)) {
+    throw new MovieBoxPlaybackLimitError(
+      "MovieBox is limiting playback for this session. Please try again later."
+    );
+  }
+}
+function fetchPlayData(apiBase, params, refererUrl, ua, providerContext, signal) {
+  return __async(this, null, function* () {
+    var _a, _b;
+    const playUrl = absoluteUrl(
+      apiBase,
+      `/wefeed-h5api-bff/subject/play?${params.toString()}`
+    );
+    const headers = __spreadProps(__spreadValues({}, requestHeaders2), {
+      "User-Agent": ua,
+      Referer: refererUrl
+    });
+    try {
+      if (providerContext == null ? void 0 : providerContext.axios) {
+        const res = yield providerContext.axios.get(playUrl, {
+          headers,
+          signal,
+          timeout: 15e3,
+          validateStatus: () => true
+        });
+        if (res.status === 429) {
+          throw new MovieBoxPlaybackLimitError("MovieBox is temporarily rate limiting playback. Please try again later.");
+        }
+        if (res.status === 406) return { noContent: true };
+        if (res.status < 200 || res.status >= 300) {
+          console.warn(`[movieBoxWeb] Play API HTTP ${res.status} for ${playUrl}`);
+          return null;
+        }
+        const json2 = res.data;
+        checkPlaybackLimit(json2);
+        if ((json2 == null ? void 0 : json2.code) === 406 || ((_a = json2 == null ? void 0 : json2.message) == null ? void 0 : _a.includes("find no content"))) {
+          return { noContent: true };
+        }
+        return json2;
+      }
+      const response = yield fetch(playUrl, {
+        headers,
+        signal
+      });
+      if (response.status === 429) {
+        throw new MovieBoxPlaybackLimitError("MovieBox is temporarily rate limiting playback. Please try again later.");
+      }
+      if (response.status === 406) {
+        return { noContent: true };
+      }
+      if (!response.ok) {
+        console.warn(`[movieBoxWeb] Play API HTTP ${response.status} for ${playUrl}`);
+        return null;
+      }
+      const json = yield response.json();
+      checkPlaybackLimit(json);
+      if ((json == null ? void 0 : json.code) === 406 || ((_b = json == null ? void 0 : json.message) == null ? void 0 : _b.includes("find no content"))) {
+        return { noContent: true };
+      }
+      return json;
+    } catch (err) {
+      if (err instanceof MovieBoxPlaybackLimitError) throw err;
+      console.warn(`[movieBoxWeb] Play API fetch error for ${playUrl}:`, (err == null ? void 0 : err.message) || err);
+      return null;
+    }
+  });
+}
+var defaultUserAgent, requestHeaders2, MovieBoxPlaybackLimitError, getStream;
 var init_stream = __esm({
   "providers/movieBoxWeb/stream.ts"() {
     "use strict";
-    init_getBaseUrl();
     init_providerErrors();
     init_utils();
+    defaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
     requestHeaders2 = {
+      // This provider uses the public anonymous API, not a saved website session.
+      // An explicit empty token overrides that cookie in the app's author jar.
+      Cookie: "token=",
       Accept: "application/json",
+      "User-Agent": defaultUserAgent,
       "x-client-info": JSON.stringify({ timezone: "Asia/Colombo" }),
       "x-source": ""
     };
+    MovieBoxPlaybackLimitError = class extends Error {
+    };
     getStream = function(_0) {
       return __async(this, arguments, function* ({
-        link
+        link,
+        type,
+        signal,
+        providerContext,
+        isDownload
       }) {
+        var _a, _b, _c, _d, _e;
         try {
           const playback = decodeLink(link);
-          const baseUrl = yield getBaseUrl(providerValue);
+          const baseUrl = yield getProviderBaseUrl();
+          const userAgent = ((_a = providerContext == null ? void 0 : providerContext.commonHeaders) == null ? void 0 : _a["User-Agent"]) || defaultUserAgent;
+          const streamHeaders = {
+            Referer: `${baseUrl}/`,
+            Origin: baseUrl,
+            "User-Agent": userAgent
+          };
+          if (!playback.subjectId && playback.detailPath) {
+            try {
+              const detailUrl = absoluteUrl(baseUrl, `/moviesDetail/${playback.detailPath}`);
+              const res = yield fetch(detailUrl);
+              if (res.ok) {
+                const detail = parseNuxtDetail(yield res.text(), providerContext.cheerio);
+                if ((_b = detail == null ? void 0 : detail.subject) == null ? void 0 : _b.subjectId) {
+                  playback.subjectId = detail.subject.subjectId;
+                  if (!playback.fallbackSubjectId) {
+                    playback.fallbackSubjectId = detail.subject.subjectId;
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn("[movieBoxWeb] Failed to resolve missing subjectId:", (e == null ? void 0 : e.message) || e);
+            }
+          }
+          const isSeries = Boolean(
+            playback.season !== void 0 && playback.season > 0 || playback.seasons && playback.seasons.some((s) => (s.se || 0) > 0)
+          );
+          const seasonNumber = playback.season !== void 0 ? playback.season : ((_d = (_c = playback.seasons) == null ? void 0 : _c.find((s) => (s.se || 0) > 0)) == null ? void 0 : _d.se) || 1;
+          const episodeNumber = playback.episode !== void 0 ? playback.episode : 1;
           const watchParams = new URLSearchParams({
             id: playback.subjectId,
             type: "/movie/detail",
-            detailSe: playback.season ? String(playback.season) : "",
-            detailEp: playback.episode ? String(playback.episode) : "",
+            detailSe: isSeries && seasonNumber > 0 ? String(seasonNumber) : "",
+            detailEp: isSeries && episodeNumber > 0 ? String(episodeNumber) : "",
             lang: "en"
           });
           const referer = absoluteUrl(
@@ -603,31 +703,80 @@ var init_stream = __esm({
             subjectId: playback.subjectId,
             detailPath: playback.detailPath
           });
-          if (playback.season && playback.episode) {
-            playParams.set("se", String(playback.season));
-            playParams.set("ep", String(playback.episode));
+          if (isSeries && seasonNumber > 0) {
+            playParams.set("se", String(seasonNumber));
+            playParams.set("ep", String(episodeNumber));
           }
-          const playUrl = absoluteUrl(
+          let playResult = yield fetchPlayData(
             baseUrl,
-            `/wefeed-h5api-bff/subject/play?${playParams}`
+            playParams,
+            referer,
+            userAgent,
+            providerContext,
+            signal
           );
-          const response = yield fetch(playUrl, {
-            headers: __spreadProps(__spreadValues({}, requestHeaders2), { Referer: referer })
-          });
-          if (!response.ok) {
+          if (!hasPlayableStreams(playResult) && (playback.fallbackSubjectId || playback.fallbackDetailPath)) {
+            const fbSubjectId = playback.fallbackSubjectId || playback.subjectId;
+            const fbDetailPath = playback.fallbackDetailPath || playback.detailPath;
+            const fbParams = new URLSearchParams({
+              subjectId: fbSubjectId,
+              detailPath: fbDetailPath
+            });
+            if (isSeries && seasonNumber > 0) {
+              fbParams.set("se", String(seasonNumber));
+              fbParams.set("ep", String(episodeNumber));
+            }
+            const fbWatchParams = new URLSearchParams({
+              id: fbSubjectId,
+              type: "/movie/detail",
+              detailSe: isSeries && seasonNumber > 0 ? String(seasonNumber) : "",
+              detailEp: isSeries && episodeNumber > 0 ? String(episodeNumber) : "",
+              lang: "en"
+            });
+            const fbReferer = absoluteUrl(
+              baseUrl,
+              `/movies/${fbDetailPath}?${fbWatchParams}`
+            );
+            const fbResult = yield fetchPlayData(
+              baseUrl,
+              fbParams,
+              fbReferer,
+              userAgent,
+              providerContext,
+              signal
+            );
+            if (hasPlayableStreams(fbResult)) {
+              playResult = fbResult;
+            }
+          }
+          if (!hasPlayableStreams(playResult)) {
+            const cleanParams = new URLSearchParams({
+              subjectId: playback.subjectId,
+              detailPath: playback.detailPath
+            });
+            const cleanResult = yield fetchPlayData(
+              baseUrl,
+              cleanParams,
+              referer,
+              userAgent,
+              providerContext,
+              signal
+            );
+            if (hasPlayableStreams(cleanResult)) {
+              playResult = cleanResult;
+            }
+          }
+          if (!playResult || playResult.noContent || ((_e = playResult.data) == null ? void 0 : _e.hasResource) === false) {
+            console.warn("[movieBoxWeb] No playable resource found for:", playback.detailPath);
+            return [];
+          }
+          if (playResult.code !== 0) {
             throw new Error(
-              `HTTP ${response.status} ${response.statusText} | URL ${playUrl}`
+              playResult.message || `MovieBox Web play API code ${playResult.code}`
             );
           }
-          const data = yield response.json();
-          const playData = data == null ? void 0 : data.data;
-          if ((data == null ? void 0 : data.code) !== 0) {
-            throw new Error(
-              (data == null ? void 0 : data.message) || `MovieBox Web play API code ${data == null ? void 0 : data.code}`
-            );
-          }
-          if ((playData == null ? void 0 : playData.hasResource) === false) return [];
-          if (!playData) throw new Error("MovieBox Web play data was not found");
+          const playData = playResult.data;
+          if (!playData) return [];
           const sources = [
             ...playData.streams || [],
             ...playData.hls || [],
@@ -644,8 +793,16 @@ var init_stream = __esm({
                 link: source.url || "",
                 type: getStreamType(source.format, source.url),
                 quality: getQuality(source.resolutions),
-                subtitles: yield getCaptions(baseUrl, playback, source, referer),
-                headers: { Referer: baseUrl, Origin: baseUrl }
+                subtitles: yield getCaptions(
+                  baseUrl,
+                  playback,
+                  source,
+                  referer,
+                  userAgent,
+                  providerContext,
+                  signal
+                ),
+                headers: streamHeaders
               };
             }))
           );
@@ -672,17 +829,26 @@ var init_episodes = __esm({
       return __async(this, arguments, function* ({
         url
       }) {
-        var _a, _b;
+        var _a, _b, _c, _d;
         try {
           const playback = decodeLink(url);
           const episodes = [];
           for (const season of playback.seasons || []) {
             const seasonNumber = season.se || 1;
-            const availableEpisodes = season.allEp ? season.allEp.split(",").map(Number).filter((episode) => episode > 0) : Array.from({ length: season.maxEp || 0 }, (_, index) => index + 1);
+            const maxEpFromRes = ((_a = season.resolutions) == null ? void 0 : _a.length) ? Math.max(0, ...season.resolutions.map((r) => r.epNum || 0)) : 0;
+            const availableEpisodes = season.allEp ? season.allEp.split(",").map(Number).filter((episode) => episode > 0) : Array.from(
+              {
+                length: maxEpFromRes > 0 ? Math.min(season.maxEp || maxEpFromRes, maxEpFromRes) : season.maxEp || 0
+              },
+              (_, index) => index + 1
+            );
             for (const episode of availableEpisodes) {
-              const resolution = (_b = (_a = season.resolutions) == null ? void 0 : _a.filter((item) => (item.epNum || 0) >= episode).sort(
+              const resolution = (_c = (_b = season.resolutions) == null ? void 0 : _b.filter((item) => (item.epNum || 0) >= episode).sort(
                 (a, b) => (b.resolution || 0) - (a.resolution || 0)
-              )[0]) == null ? void 0 : _b.resolution;
+              )[0]) == null ? void 0 : _c.resolution;
+              if (((_d = season.resolutions) == null ? void 0 : _d.length) && !resolution) {
+                continue;
+              }
               episodes.push({
                 title: `S${String(seasonNumber).padStart(2, "0")} E${String(episode).padStart(2, "0")}`,
                 link: encodeLink(__spreadProps(__spreadValues({}, playback), {

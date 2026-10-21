@@ -1,4 +1,5 @@
 import { throwProviderError } from "../providerErrors";
+import { ProviderContext } from "../types";
 import { gofileExtractor } from "./gofile";
 
 const hubcloudDecode = function (value: string) {
@@ -45,55 +46,7 @@ const getRedirectedPixelDrainUrl = (
   return "";
 };
 
-async function checkStreamHealth(
-  stream: { server: string; link: string; headers?: any },
-  signal?: AbortSignal,
-): Promise<boolean> {
-  if (!stream?.link) return false;
-  const reqHeaders: Record<string, string> = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-    ...(stream.headers || {}),
-  };
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    if (signal) {
-      signal.addEventListener("abort", () => controller.abort(), { once: true });
-    }
-
-    const res = await fetch(stream.link, {
-      method: "HEAD",
-      headers: reqHeaders,
-      signal: controller.signal,
-      redirect: "follow",
-    });
-    clearTimeout(timeoutId);
-
-    if (res.status >= 200 && res.status < 400) {
-      return true;
-    }
-
-    if (res.status === 405 || res.status === 403) {
-      const getController = new AbortController();
-      const getTimeoutId = setTimeout(() => getController.abort(), 4000);
-      if (signal) {
-        signal.addEventListener("abort", () => getController.abort(), { once: true });
-      }
-      const getRes = await fetch(stream.link, {
-        method: "GET",
-        headers: { ...reqHeaders, Range: "bytes=0-0" },
-        signal: getController.signal,
-      });
-      clearTimeout(getTimeoutId);
-      return getRes.status >= 200 && getRes.status < 400;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
 
 async function resolveGofileLink(
   gofileLink: string,
@@ -127,7 +80,7 @@ export async function hubcloudExtractor(
   axios: any,
   cheerio: any,
   headers: Record<string, string>,
-  providerContext?: any,
+  providerContext?: ProviderContext,
   isDownload?: boolean,
   providerValue?: string,
 ) {
@@ -152,11 +105,7 @@ export async function hubcloudExtractor(
             `hubcloudExtractor: WAF detected (403) for ${link}, using solver...`,
           );
           const cleanHeaders = { ...headers, Referer: baseUrl };
-          delete cleanHeaders["User-Agent"];
-          delete cleanHeaders["sec-ch-ua"];
-          delete cleanHeaders["sec-ch-ua-mobile"];
-          delete cleanHeaders["sec-ch-ua-platform"];
-          delete cleanHeaders["Cookie"];
+
 
           const wafResult = await openWebView(baseUrl, {
             title: "Solve the captcha below and click done",
@@ -220,60 +169,18 @@ export async function hubcloudExtractor(
         const vcloudRes = await axios.get(vcloudLink, { headers, signal });
         vcloudText = vcloudRes.data;
       } catch (error: any) {
-      if (error.response?.status === 403 && openWebView) {
-        console.log(
-          `hubcloudExtractor: WAF detected (403) for ${vcloudLink}, using solver...`,
-        );
-        const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
-        const cleanHeaders2 = { ...headers, Referer: vcloudBaseUrl };
-        delete cleanHeaders2["User-Agent"];
-        delete cleanHeaders2["sec-ch-ua"];
-        delete cleanHeaders2["sec-ch-ua-mobile"];
-        delete cleanHeaders2["sec-ch-ua-platform"];
-        delete cleanHeaders2["Cookie"];
-
-        const wafResult = await openWebView(vcloudBaseUrl, {
-          title: "Solve the captcha below and click done",
-          description: "Required to bypass anti-bot protection.",
-          headers: cleanHeaders2,
-          waitForCookie: "cf_clearance",
-          force: true,
-        });
-        if (wafResult.userAgent) headers["User-Agent"] = wafResult.userAgent;
-        headers["Cookie"] =
-          (headers["Cookie"] ? headers["Cookie"] + "; " : "") +
-          wafResult.cookies;
-        const retryRes = await axios.get(vcloudLink, { headers, signal });
-        vcloudText = retryRes.data;
-      } else {
-        if (error.response?.status === 403 && !openWebView) {
-          console.log(
-            `hubcloudExtractor: 403 Forbidden for ${vcloudLink}, but openWebView solver is not available!`,
-          );
-        }
-        // Fallback to fetch
-        let fetchRes = await fetch(vcloudLink, {
-          headers,
-          signal,
-          redirect: "follow",
-        });
-
-        if (fetchRes.status === 403 && openWebView) {
+        if (error.response?.status === 403 && openWebView) {
           console.log(
             `hubcloudExtractor: WAF detected (403) for ${vcloudLink}, using solver...`,
           );
           const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
-          const cleanHeaders3 = { ...headers, Referer: vcloudBaseUrl };
-          delete cleanHeaders3["User-Agent"];
-          delete cleanHeaders3["sec-ch-ua"];
-          delete cleanHeaders3["sec-ch-ua-mobile"];
-          delete cleanHeaders3["sec-ch-ua-platform"];
-          delete cleanHeaders3["Cookie"];
+          const cleanHeaders2 = { ...headers, Referer: vcloudBaseUrl };
+
 
           const wafResult = await openWebView(vcloudBaseUrl, {
             title: "Solve the captcha below and click done",
             description: "Required to bypass anti-bot protection.",
-            headers: cleanHeaders3,
+            headers: cleanHeaders2,
             waitForCookie: "cf_clearance",
             force: true,
           });
@@ -281,21 +188,12 @@ export async function hubcloudExtractor(
           headers["Cookie"] =
             (headers["Cookie"] ? headers["Cookie"] + "; " : "") +
             wafResult.cookies;
-          fetchRes = await fetch(vcloudLink, {
-            headers,
-            signal,
-            redirect: "follow",
-          });
+          const retryRes = await axios.get(vcloudLink, { headers, signal });
+          vcloudText = retryRes.data;
+        } else {
+          throw error;
         }
-
-        if (!fetchRes.ok) {
-          throw new Error(
-            `HTTP ${fetchRes.status} ${fetchRes.statusText} | URL ${vcloudLink}`,
-          );
-        }
-        vcloudText = await fetchRes.text();
       }
-    }
     }
     const $ = cheerio.load(vcloudText);
     // console.log("vcloudRes", $.text());
@@ -334,46 +232,55 @@ export async function hubcloudExtractor(
 
         case link?.includes("hubcloud") || link?.includes("/?id="):
           try {
-            const newLinkRes = await fetch(link, {
-              method: "HEAD",
-              headers,
-              signal,
-              redirect: "manual",
-            });
-
-            // Check if response is a redirect (301, 302, etc.)
             let newLink = link;
-            if (newLinkRes.status >= 300 && newLinkRes.status < 400) {
-              newLink = newLinkRes.headers.get("location") || link;
-            } else if (newLinkRes.url && newLinkRes.url !== link) {
-              // Fallback: check if URL changed (redirect was followed)
-              newLink = newLinkRes.url;
-            } else {
-              newLink = newLinkRes.headers.get("location") || link;
-            }
-            if (newLink.includes("googleusercontent")) {
-              newLink = newLink.split("?link=")[1];
-            } else {
-              const newLinkRes2 = await fetch(newLink, {
-                method: "HEAD",
-                headers,
-                signal,
-                redirect: "manual",
-              });
 
-              // Check if response is a redirect
-              if (newLinkRes2.status >= 300 && newLinkRes2.status < 400) {
-                newLink =
-                  newLinkRes2.headers.get("location")?.split("?link=")[1] ||
-                  newLink;
-              } else if (newLinkRes2.url && newLinkRes2.url !== newLink) {
-                // Fallback: URL changed due to redirect
-                newLink = newLinkRes2.url.split("?link=")[1] || newLinkRes2.url;
-              } else {
-                newLink =
-                  newLinkRes2.headers.get("location")?.split("?link=")[1] ||
-                  newLink;
+            // 1. Try fetch with redirect: "follow" (ideal for mobile WebWorkers)
+            try {
+              if (typeof fetch !== "undefined") {
+                const fRes = await fetch(link, {
+                  headers,
+                  signal,
+                  redirect: "follow",
+                });
+                if (fRes.url && fRes.url.includes("googleusercontent")) {
+                  newLink = fRes.url.split("?link=")[1] || fRes.url;
+                } else if (fRes.url && fRes.url !== link) {
+                  newLink = fRes.url;
+                }
               }
+            } catch { }
+
+            // 2. Fallback to axios with maxRedirects: 0 (for Node/desktop)
+            if (!newLink.includes("googleusercontent")) {
+              try {
+                const res1 = await axios.get(newLink, {
+                  headers,
+                  signal,
+                  maxRedirects: 0,
+                  validateStatus: (s: number) => s >= 200 && s < 400,
+                });
+                if (res1.headers?.["location"]) {
+                  newLink = res1.headers["location"];
+                }
+                if (newLink.includes("googleusercontent")) {
+                  newLink = newLink.split("?link=")[1] || newLink;
+                } else if (newLink.includes("http")) {
+                  const res2 = await axios.get(newLink, {
+                    headers,
+                    signal,
+                    maxRedirects: 0,
+                    validateStatus: (s: number) => s >= 200 && s < 400,
+                  });
+                  if (res2.headers?.["location"]) {
+                    const loc2 = res2.headers["location"];
+                    newLink = loc2.includes("?link=") ? loc2.split("?link=")[1] : loc2;
+                  }
+                }
+              } catch { }
+            }
+
+            if (newLink.includes("?link=")) {
+              newLink = newLink.split("?link=")[1] || newLink;
             }
 
             streamLinks.push({
@@ -436,7 +343,7 @@ export async function hubcloudExtractor(
       )
         .toLowerCase()
         .trim();
-    } catch {}
+    } catch { }
 
     const getPriority = (serverName: string = "") => {
       const s = serverName.toLowerCase();
@@ -449,51 +356,29 @@ export async function hubcloudExtractor(
         return 0;
       }
       if (isDownload) {
-        if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-        if (s.includes("cf storage") || s.includes("resumable")) return 2;
-        if (s.includes("gdrive") || s.includes("instant")) return 3;
+        if (s.includes("cf storage") || s.includes("storage") || s.includes("resumable")) return 1;
+        if (s.includes("gdrive") || s.includes("google") || s.includes("instant")) return 2;
+        if (s.includes("pixeldrain")) return 3;
         if (s.includes("gofile")) return 4;
-        if (s.includes("pixeldrain")) return 5;
-        if (s.includes("fastdl")) return 6;
-        if (s.includes("hubcdn")) return 7;
+        if (s.includes("fastdl") || s.includes("fsl")) return 5;
+        if (s.includes("hubcdn")) return 6;
+        if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 8;
         return 10;
       } else {
-        if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-        if (s.includes("cf storage")) return 2;
+        if (s.includes("cf storage") || s.includes("storage")) return 1;
+        if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 2;
         if (s.includes("gofile")) return 3;
         if (s.includes("pixeldrain")) return 4;
-        if (s.includes("fastdl")) return 5;
+        if (s.includes("fastdl") || s.includes("fsl")) return 5;
         if (s.includes("hubcdn")) return 6;
-        if (s.includes("gdrive")) return 7;
+        if (s.includes("gdrive") || s.includes("google")) return 7;
         return 10;
       }
     };
 
     streamLinks.sort((a, b) => getPriority(a.server) - getPriority(b.server));
 
-    if (isDownload && streamLinks.length > 0) {
-      const isTopHealthy = await checkStreamHealth(
-        streamLinks[0],
-        signal,
-      );
-      if (!isTopHealthy) {
-        let healthyIndex = -1;
-        for (let i = 1; i < streamLinks.length; i++) {
-          const isHealthy = await checkStreamHealth(
-            streamLinks[i],
-            signal,
-          );
-          if (isHealthy) {
-            healthyIndex = i;
-            break;
-          }
-        }
-        if (healthyIndex > 0) {
-          const [workingStream] = streamLinks.splice(healthyIndex, 1);
-          streamLinks.unshift(workingStream);
-        }
-      }
-    }
+
 
     console.log("streamLinks", streamLinks);
     return streamLinks;

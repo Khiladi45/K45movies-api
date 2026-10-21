@@ -1,15 +1,19 @@
 export const catalog = [
   {
-    title: "Home",
-    filter: "/mobile/home?app=1",
+    title: "Only on Netflix",
+    filter: "Only on Netflix",
   },
   {
-    title: "Series",
-    filter: "/mobile/series",
+    title: "New on Netflix",
+    filter: "New on Netflix",
   },
   {
-    title: "Movies",
-    filter: "/mobile/movies",
+    title: "Blockbuster Movies",
+    filter: "Blockbuster Movies",
+  },
+  {
+    title: "US TV Shows Dubbed in Hindi",
+    filter: "US TV Shows Dubbed in Hindi",
   },
 ];
 

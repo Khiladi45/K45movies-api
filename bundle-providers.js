@@ -13,6 +13,11 @@ const EXCLUDE_DIRS = new Set(["extractors"]);
 
 if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir, { recursive: true });
+} else {
+  // Remove stale bundles from providers that no longer exist or fail to build.
+  for (const file of fs.readdirSync(outputDir)) {
+    fs.rmSync(path.join(outputDir, file), { recursive: true, force: true });
+  }
 }
 
 const providers = fs

@@ -172,7 +172,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue) => __async(null, null, function* () {
       var _a, _b;
@@ -246,6 +246,19 @@ function getWithWAF(url, axios, openWebView, headers) {
     }
   });
 }
+function parseSvelteData(html) {
+  const match = html.match(/resolve\(\{\s*id:\s*\d+,\s*data:/);
+  if (!match || match.index === void 0) return null;
+  const start = match.index + match[0].length;
+  const errorIdx = html.indexOf(",error:", start);
+  if (errorIdx === -1) return null;
+  const dataStr = html.substring(start, errorIdx);
+  try {
+    return Function(`"use strict"; return (${dataStr});`)();
+  } catch (e) {
+    return null;
+  }
+}
 function posts(_0) {
   return __async(this, arguments, function* ({
     url,
@@ -257,19 +270,38 @@ function posts(_0) {
     commonHeaders,
     operation
   }) {
+    var _a;
     try {
       const res = yield getWithWAF(url, axios, openWebView, commonHeaders);
       const data = res.data;
-      const $ = cheerio.load(data);
       const catalog2 = [];
-      $(".recent-posts").children().map((i, element) => {
-        const title = $(element).find("img").attr("alt");
+      const parsed = parseSvelteData(data);
+      const items = ((_a = parsed == null ? void 0 : parsed.data) == null ? void 0 : _a.items) || (parsed == null ? void 0 : parsed.items);
+      if (Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          const rawTitle = (item.post_title || "").replace(/&amp;/g, "&").replace(/&#8211;/g, "-").replace(/&#8217;/g, "'").replace(/^Download\s+/i, "").trim();
+          const slug = item.slug || "";
+          const link = slug.startsWith("/") ? slug : `/${slug}`;
+          const image = item.thumbnail_image || "";
+          if (rawTitle && link) {
+            catalog2.push({
+              title: rawTitle,
+              link,
+              image
+            });
+          }
+        }
+        if (catalog2.length > 0) return catalog2;
+      }
+      const $ = cheerio.load(data);
+      $(".recent-posts, .posts-list, article").children().map((i, element) => {
+        const title = $(element).find("img").attr("alt") || $(element).find("h2, h3").text().trim();
         const link = $(element).find("a").attr("href");
         const image = $(element).find("img").attr("src");
         if (title && link && image) {
           const postUrl = new URL(link, `${baseUrl}/`);
           catalog2.push({
-            title: title.replace("Download", "").trim(),
+            title: title.replace(/^Download\s+/i, "").trim(),
             link: `${postUrl.pathname}${postUrl.search}${postUrl.hash}`,
             image
           });
@@ -296,7 +328,13 @@ var init_posts = __esm({
       }) {
         const { cheerio, axios, openWebView, commonHeaders } = providerContext;
         const baseUrl = yield getBaseUrl("kat");
-        const url = `${baseUrl + filter}/page/${page}/`;
+        let url;
+        if (!filter || filter === "/" || filter === "") {
+          url = page > 1 ? `${baseUrl}/?page=${page}` : `${baseUrl}/`;
+        } else {
+          const cleanFilter = filter.startsWith("/") ? filter : `/${filter}`;
+          url = page > 1 ? `${baseUrl}${cleanFilter}?page=${page}` : `${baseUrl}${cleanFilter}`;
+        }
         return posts({
           url,
           baseUrl,
@@ -318,7 +356,8 @@ var init_posts = __esm({
       }) {
         const { cheerio, axios, openWebView, commonHeaders } = providerContext;
         const baseUrl = yield getBaseUrl("kat");
-        const url = `${baseUrl}/page/${page}/?s=${searchQuery}`;
+        const query = encodeURIComponent(searchQuery);
+        const url = page > 1 ? `${baseUrl}/?s=${query}&page=${page}` : `${baseUrl}/?s=${query}`;
         return posts({
           url,
           baseUrl,
@@ -345,40 +384,73 @@ function getCache2() {
   }
   return state.__vegaCinemetaCache__;
 }
-function getCinemetaMeta(imdbId, type, providerContext) {
-  if (!/^tt\d+$/.test(imdbId)) {
-    return Promise.reject(new Error(`Invalid IMDb ID: ${imdbId}`));
-  }
-  const cache = getCache2();
-  const cached = cache[imdbId];
-  if (cached) {
-    if (isCinemetaPromise(cached)) {
-      return cached;
-    }
-    if (cached.name && cached.imdb_id === imdbId) {
-      return Promise.resolve(cached);
-    }
-    delete cache[imdbId];
-  }
-  const mediaType = type === "series" ? "series" : "movie";
-  const url = `${CINEMETA_BASE_URL}/${mediaType}/${imdbId}.json`;
-  const request = providerContext.axios.get(url).then((response) => {
+function resolveTmdbToImdb(tmdbId, type, providerContext) {
+  return __async(this, null, function* () {
     var _a;
-    const meta = (_a = response.data) == null ? void 0 : _a.meta;
-    if (!(meta == null ? void 0 : meta.name) || meta.imdb_id !== imdbId) {
-      throw new Error(`Cinemeta returned invalid metadata for ${imdbId}`);
+    try {
+      const tmdbType = type === "series" ? "tv" : "movie";
+      const res = yield providerContext.axios.get(
+        `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/external_ids?api_key=cfe422613b250f702980a3bbf9e90716`,
+        { timeout: 5e3 }
+      );
+      const imdb = (_a = res.data) == null ? void 0 : _a.imdb_id;
+      if (typeof imdb === "string" && /^tt\d+$/.test(imdb)) {
+        return imdb;
+      }
+    } catch (e) {
     }
-    cache[imdbId] = meta;
-    return meta;
-  }).catch((error) => {
-    delete cache[imdbId];
-    throw error;
+    return null;
   });
-  cache[imdbId] = request;
-  return request;
+}
+function getCinemetaMeta(id, type, providerContext) {
+  return __async(this, null, function* () {
+    var _a;
+    if (!id || typeof id !== "string") {
+      return null;
+    }
+    let cleanImdbId = (_a = id.match(/tt\d+/)) == null ? void 0 : _a[0];
+    if (!cleanImdbId) {
+      const tmdbMatch = id.match(/(?:themoviedb\.org\/(?:movie|tv)\/|tmdb:?)(\d+)/i) || id.match(/^(\d+)$/);
+      if (tmdbMatch) {
+        cleanImdbId = (yield resolveTmdbToImdb(tmdbMatch[1], type, providerContext)) || void 0;
+      }
+    }
+    if (!cleanImdbId) {
+      return null;
+    }
+    const cache = getCache2();
+    const cached = cache[cleanImdbId];
+    if (cached) {
+      if (isCinemetaPromise(cached)) {
+        return cached;
+      }
+      if (cached.name && cached.imdb_id === cleanImdbId) {
+        return cached;
+      }
+      delete cache[cleanImdbId];
+    }
+    const mediaType = type === "series" ? "series" : "movie";
+    const url = `${CINEMETA_BASE_URL}/${mediaType}/${cleanImdbId}.json`;
+    const request = providerContext.axios.get(url, { timeout: 8e3 }).then((response) => {
+      var _a2;
+      const meta = (_a2 = response.data) == null ? void 0 : _a2.meta;
+      if (!(meta == null ? void 0 : meta.name) || meta.imdb_id !== cleanImdbId) {
+        delete cache[cleanImdbId];
+        return null;
+      }
+      cache[cleanImdbId] = meta;
+      return meta;
+    }).catch(() => {
+      delete cache[cleanImdbId];
+      return null;
+    });
+    cache[cleanImdbId] = request;
+    return request;
+  });
 }
 function applyCinemetaMeta(info, meta) {
   var _a;
+  if (!meta) return info;
   return __spreadProps(__spreadValues({}, info), {
     title: meta.name || info.title,
     image: meta.background || meta.poster || info.image,
@@ -447,13 +519,17 @@ function getEpisodeNumber(title, season) {
     ...title.matchAll(/\bs\d{1,2}\s*e(\d{1,3})\b/gi),
     ...title.matchAll(/\bepisodes?\s*:?\s*(\d{1,3})\b/gi),
     ...title.matchAll(/\bep\s*\.?:?\s*(\d{1,3})\b/gi),
-    ...title.matchAll(/\be(\d{1,3})\b/gi)
+    ...title.matchAll(/\be(\d{1,3})\b/gi),
+    ...title.matchAll(/^\s*(\d{1,3})\s*[.:-]\s*/gi)
   ].map((match) => Number(match[1]));
   const episodes = [...new Set(matches.filter((episode) => episode > 0))];
   return episodes.length === 1 ? episodes[0] : void 0;
 }
 function enrichCinemetaEpisodes(episodes, videos, season) {
   var _a;
+  if (!videos || !Array.isArray(videos) || videos.length === 0 || !season) {
+    return episodes;
+  }
   const videosByEpisode = /* @__PURE__ */ new Map();
   let hasDuplicateVideo = false;
   for (const video of videos) {
@@ -659,12 +735,28 @@ function getWithWAF2(url, axios, openWebView, headers) {
           waitForCookie: "cf_clearance"
         });
         return yield axios.get(url, {
-          headers: __spreadProps(__spreadValues({}, headers), { Referer: baseUrl, Cookie: wafResult.cookies })
+          headers: __spreadProps(__spreadValues({}, headers), {
+            Referer: baseUrl,
+            Cookie: wafResult.cookies || wafResult.cookie
+          })
         });
       }
       throw error;
     }
   });
+}
+function parseSvelteData2(html) {
+  const match = html.match(/resolve\(\{\s*id:\s*\d+,\s*data:/);
+  if (!match || match.index === void 0) return null;
+  const start = match.index + match[0].length;
+  const errorIdx = html.indexOf(",error:", start);
+  if (errorIdx === -1) return null;
+  const dataStr = html.substring(start, errorIdx);
+  try {
+    return Function(`"use strict"; return (${dataStr});`)();
+  } catch (e) {
+    return null;
+  }
 }
 var getMeta;
 var init_meta = __esm({
@@ -679,30 +771,47 @@ var init_meta = __esm({
         link,
         providerContext
       }) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _i;
         try {
           const { axios, cheerio, openWebView, commonHeaders } = providerContext;
           const baseUrl = yield getBaseUrl("kat");
           const url = new URL(link, `${baseUrl}/`).href;
           const res = yield getWithWAF2(url, axios, openWebView, commonHeaders);
           const data = res.data;
-          const $ = cheerio.load(data);
+          const parsed = parseSvelteData2(data);
+          const postContent = ((_a = parsed == null ? void 0 : parsed.data) == null ? void 0 : _a.post_content) || "";
+          const page$ = cheerio.load(data);
+          const $ = cheerio.load(
+            postContent ? `<div class="entry-content">${postContent}</div>` : data
+          );
           const container = $(".yQ8hqd.ksSzJd.LoQAYe").html() ? $(".yQ8hqd.ksSzJd.LoQAYe") : $(".FxvUNb");
-          const imdbId = ((_a = container.find('a[href*="imdb.com/title/tt"]:not([href*="imdb.com/title/tt/"])').attr("href")) == null ? void 0 : _a.split("/")[4]) || "";
-          const title = container.find('li:contains("Name")').children().remove().end().text();
-          const type = $(".yQ8hqd.ksSzJd.LoQAYe").html() ? "series" : "movie";
-          const synopsis = container.find('li:contains("Stars")').text();
-          const image = $('h4:contains("SCREENSHOTS")').next().find("img").attr("src") || "";
+          const imdbId = ((_b = container.find('a[href*="imdb.com/title/tt"]:not([href*="imdb.com/title/tt/"])').attr("href")) == null ? void 0 : _b.split("/")[4]) || ((_d = (_c = $('a[href*="imdb.com/title/tt"]').attr("href")) == null ? void 0 : _c.match(/tt\d+/)) == null ? void 0 : _d[0]) || ((_e = data.match(/imdb\.com\/title\/(tt\d+)/i)) == null ? void 0 : _e[1]) || postContent && ((_f = postContent.match(/imdb\.com\/title\/(tt\d+)/i)) == null ? void 0 : _f[1]) || "";
+          const pageTitle = page$("title").text().replace(/^Download\s+/i, "").trim() || ((_g = page$('meta[property="og:title"]').attr("content")) == null ? void 0 : _g.replace(/^Download\s+/i, "").trim()) || $("h1, .entry-title").first().text().replace(/^Download\s+/i, "").trim();
+          let title = container.find('li:contains("Name")').children().remove().end().text().trim();
+          if (!title) {
+            title = $("h3, h2").first().text().replace(/^Download\s+/i, "").trim();
+          }
+          if (!title) {
+            title = pageTitle.replace(/\[.*?\]|\(.*?\)|\|.*/g, "").trim();
+          }
+          const isSeries = /season\s*\d+/i.test(pageTitle) || /\[\s*s\d{1,2}\s*\]/i.test(pageTitle) || /(?:^|\b)(?:season|episode)\b/i.test(postContent || data) && !pageTitle.toLowerCase().includes("full movie") || $(".yQ8hqd.ksSzJd.LoQAYe").length > 0;
+          const type = isSeries ? "series" : "movie";
+          let synopsis = container.find('li:contains("Stars"), li:contains("Storyline")').text().trim();
+          if (!synopsis) {
+            synopsis = $('p:contains("Storyline"), h2:contains("Storyline")').next("p").text().trim() || page$('meta[name="description"]').attr("content") || "";
+          }
+          const image = $('h4:contains("SCREENSHOTS")').next().find("img").attr("src") || $('img[src*="amazon.com"], img[src*="tmdb.org"]').first().attr("src") || $(".entry-content img").first().attr("src") || page$('meta[property="og:image"]').attr("content") || "";
           console.log("katGetInfo", title, synopsis, image, imdbId, type);
           const links = [];
           const directLink = [];
           $(".entry-content").find('p:contains("Episode")').each((i, element) => {
-            const dlLink = $(element).nextAll("h3,h2").first().find('a:contains("1080"),a:contains("720"),a:contains("480")').attr("href") || "";
-            const dlTitle = $(element).find("span").text();
-            if (link.trim().length > 0 && dlTitle.includes("Episode ")) {
+            const dlLink = $(element).nextAll("h3,h2").first().find('a:contains("1080"),a:contains("720"),a:contains("480"),a:contains("HEVC")').attr("href") || "";
+            const dlTitle = $(element).text().trim();
+            if (dlLink.trim().length > 0 && dlTitle.includes("Episode")) {
               directLink.push({
                 title: dlTitle,
-                link: dlLink
+                link: dlLink,
+                type: "series"
               });
             }
           });
@@ -713,35 +822,68 @@ var init_meta = __esm({
               directLinks: directLink
             });
           }
-          $(".entry-content").find("pre").nextUntil("div").filter("h2").each((i, element) => {
+          $(".entry-content a").each((i, element) => {
             var _a2;
-            const link2 = $(element).find("a").attr("href");
-            const quality = ((_a2 = $(element).text().match(/\b(480p|720p|1080p|2160p)\b/i)) == null ? void 0 : _a2[0]) || "";
-            const title2 = $(element).text();
-            if (link2 && title2.includes("")) {
-              links.push({
-                quality,
-                title: title2,
-                episodesLink: link2
-              });
+            const aHref = $(element).attr("href") || "";
+            const aText = $(element).text().trim().replace(/\s+/g, " ");
+            if (!aHref || aHref === "#" || !aHref.startsWith("http") || aHref.includes("imdb.com") || aHref.includes("catimages") || aText.toLowerCase().includes("sample") || aText.toLowerCase().includes("online") || aText.toLowerCase().includes("trailer") || aHref.includes("/directlink")) {
+              return;
+            }
+            if (/links\.(?:kmhd|kmphotos)\.[a-z]+\/(?:file|pack)\/[\w-]+/i.test(aHref) || /(?:480|720|1080|2160|4k)/i.test(aText) || aHref.includes("gdflix") || aHref.includes("hubcloud")) {
+              let linkTitle = $(element).parent("h2, h3, h4, h5, p").text().trim().replace(/[\r\n\t]+/g, " ");
+              if (!linkTitle || linkTitle === aText || linkTitle.length < 4) {
+                linkTitle = aText;
+              }
+              const quality = ((_a2 = (linkTitle + " " + aText).match(/\b(480p|720p|1080p|2160p|4k)\b/i)) == null ? void 0 : _a2[0]) || "";
+              const isPack = aHref.includes("/pack/");
+              if (type === "movie") {
+                if (!links.some((l) => {
+                  var _a3, _b2;
+                  return ((_b2 = (_a3 = l.directLinks) == null ? void 0 : _a3[0]) == null ? void 0 : _b2.link) === aHref;
+                })) {
+                  links.push({
+                    quality,
+                    title: linkTitle,
+                    directLinks: [{ link: aHref, title: linkTitle, type: "movie" }]
+                  });
+                }
+              } else {
+                if (isPack) {
+                  if (!links.some((l) => l.episodesLink === aHref)) {
+                    links.push({
+                      quality,
+                      title: linkTitle,
+                      episodesLink: aHref
+                    });
+                  }
+                } else {
+                  const alreadyInDirect = links.some(
+                    (l) => {
+                      var _a3;
+                      return (_a3 = l.directLinks) == null ? void 0 : _a3.some((dl) => dl.link === aHref);
+                    }
+                  );
+                  if (!alreadyInDirect) {
+                    const firstGroup = links.find((l) => l.directLinks && l.directLinks.length > 0);
+                    if (firstGroup && firstGroup.directLinks) {
+                      firstGroup.directLinks.push({
+                        title: linkTitle,
+                        link: aHref,
+                        type: "series"
+                      });
+                    } else {
+                      links.push({
+                        quality,
+                        title: linkTitle,
+                        directLinks: [{ link: aHref, title: linkTitle, type: "series" }]
+                      });
+                    }
+                  }
+                }
+              }
             }
           });
-          if (links.length === 0 && type === "movie") {
-            $(".entry-content").find('h2:contains("DOWNLOAD"),h3:contains("DOWNLOAD")').nextUntil("pre,div").filter("h2").each((i, element) => {
-              var _a2;
-              const link2 = $(element).find("a").attr("href");
-              const quality = ((_a2 = $(element).text().match(/\b(480p|720p|1080p|2160p)\b/i)) == null ? void 0 : _a2[0]) || "";
-              const title2 = $(element).text();
-              if (link2 && !title2.includes("Online")) {
-                links.push({
-                  quality,
-                  title: title2,
-                  directLinks: [{ link: link2, title: title2, type: "movie" }]
-                });
-              }
-            });
-          }
-          const quickDownload = yield (_b = providerContext.kvStore) == null ? void 0 : _b.get("katmovies_quickDownload");
+          const quickDownload = yield (_h = providerContext.kvStore) == null ? void 0 : _h.get("katmovies_quickDownload");
           const websiteInfo = {
             title,
             synopsis,
@@ -753,45 +895,56 @@ var init_meta = __esm({
             webUrl: url
           };
           if (!imdbId) return websiteInfo;
-          const cinemeta = yield getCinemetaMeta(imdbId, type, providerContext);
-          if (type === "series" && cinemeta.type === "series") {
-            const skipTimings = yield (_c = providerContext.kvStore) == null ? void 0 : _c.get("katmovies_skipTimings");
-            websiteInfo.linkList = yield Promise.all(
-              websiteInfo.linkList.map((item) => __async(null, null, function* () {
-                const season = getCinemetaSeason(item.title) || getCinemetaSeason(title);
-                if (!season) return item;
-                if (item.directLinks) {
-                  let enriched = enrichCinemetaEpisodes(
-                    item.directLinks,
-                    cinemeta.videos || [],
-                    season
-                  );
-                  if (skipTimings != null ? skipTimings : true) {
-                    enriched = yield enrichEpisodesWithSkipTimings(
-                      enriched,
-                      imdbId,
-                      season,
-                      providerContext
-                    );
-                  }
-                  return __spreadProps(__spreadValues({}, item), {
-                    directLinks: enriched
-                  });
-                }
-                if (item.episodesLink) {
-                  return __spreadProps(__spreadValues({}, item), {
-                    episodesLink: addCinemetaContext(
-                      new URL(item.episodesLink, url).href,
-                      imdbId,
-                      season
-                    )
-                  });
-                }
-                return item;
-              }))
-            );
+          try {
+            const cinemeta = yield getCinemetaMeta(imdbId, type, providerContext);
+            if (cinemeta) {
+              if (type === "series" && cinemeta.type === "series") {
+                const skipTimings = yield (_i = providerContext.kvStore) == null ? void 0 : _i.get("katmovies_skipTimings");
+                websiteInfo.linkList = yield Promise.all(
+                  websiteInfo.linkList.map((item) => __async(null, null, function* () {
+                    const season = getCinemetaSeason(item.title) || getCinemetaSeason(title);
+                    if (!season) return item;
+                    if (item.directLinks) {
+                      let enriched = enrichCinemetaEpisodes(
+                        item.directLinks,
+                        cinemeta.videos || [],
+                        season
+                      );
+                      if (skipTimings != null ? skipTimings : true) {
+                        try {
+                          enriched = yield enrichEpisodesWithSkipTimings(
+                            enriched,
+                            imdbId,
+                            season,
+                            providerContext
+                          );
+                        } catch (e) {
+                          console.warn("KatMovies: Skip timings failed", e);
+                        }
+                      }
+                      return __spreadProps(__spreadValues({}, item), {
+                        directLinks: enriched
+                      });
+                    }
+                    if (item.episodesLink) {
+                      return __spreadProps(__spreadValues({}, item), {
+                        episodesLink: addCinemetaContext(
+                          new URL(item.episodesLink, url).href,
+                          imdbId,
+                          season
+                        )
+                      });
+                    }
+                    return item;
+                  }))
+                );
+              }
+              return applyCinemetaMeta(websiteInfo, cinemeta);
+            }
+          } catch (e) {
+            return websiteInfo;
           }
-          return applyCinemetaMeta(websiteInfo, cinemeta);
+          return websiteInfo;
         } catch (err) {
           throwProviderError("KatMovies", "metadata", err);
         }
@@ -958,48 +1111,6 @@ var init_gofile = __esm({
 });
 
 // providers/extractors/hubcloud.ts
-function checkStreamHealth(stream, signal) {
-  return __async(this, null, function* () {
-    if (!(stream == null ? void 0 : stream.link)) return false;
-    const reqHeaders = __spreadValues({
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
-    }, stream.headers || {});
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4e3);
-      if (signal) {
-        signal.addEventListener("abort", () => controller.abort(), { once: true });
-      }
-      const res = yield fetch(stream.link, {
-        method: "HEAD",
-        headers: reqHeaders,
-        signal: controller.signal,
-        redirect: "follow"
-      });
-      clearTimeout(timeoutId);
-      if (res.status >= 200 && res.status < 400) {
-        return true;
-      }
-      if (res.status === 405 || res.status === 403) {
-        const getController = new AbortController();
-        const getTimeoutId = setTimeout(() => getController.abort(), 4e3);
-        if (signal) {
-          signal.addEventListener("abort", () => getController.abort(), { once: true });
-        }
-        const getRes = yield fetch(stream.link, {
-          method: "GET",
-          headers: __spreadProps(__spreadValues({}, reqHeaders), { Range: "bytes=0-0" }),
-          signal: getController.signal
-        });
-        clearTimeout(getTimeoutId);
-        return getRes.status >= 200 && getRes.status < 400;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  });
-}
 function resolveGofileLink(gofileLink, axios, providerContext) {
   return __async(this, null, function* () {
     try {
@@ -1025,14 +1136,14 @@ function resolveGofileLink(gofileLink, axios, providerContext) {
 }
 function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContext, isDownload, providerValue) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
       if (!headers["Cookie"]) {
         headers["Cookie"] = "ext_name=ojplmecpdpgccookcobabopnaifgidhf; xla=s4t; cf_clearance=woQrFGXtLfmEMBEiGUsVHrUBMT8s3cmguIzmMjmvpkg-1770053679-1.2.1.1-xBrQdciOJsweUF6F2T_OtH6jmyanN_TduQ0yslc_XqjU6RcHSxI7.YOKv6ry7oYo64868HYoULnVyww536H2eVI3R2e4wKzsky6abjPdfQPxqpUaXjxfJ02o6jl3_Vkwr4uiaU7Wy596Vdst3y78HXvVmKdIohhtPvp.vZ9_L7wvWdce0GRixjh_6JiqWmWMws46hwEt3hboaS1e1e4EoWCvj5b0M_jVwvSxBOAW5emFzvT3QrnRh4nyYmKDERnY";
       }
       console.log("hubcloudExtractor", link);
       const baseUrl = link.split("/").slice(0, 3).join("/");
-      const streamLinks = [];
+      const streamLinks2 = [];
       const openWebView = providerContext == null ? void 0 : providerContext.openWebView;
       let vLinkRes;
       try {
@@ -1044,11 +1155,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
               `hubcloudExtractor: WAF detected (403) for ${link}, using solver...`
             );
             const cleanHeaders = __spreadProps(__spreadValues({}, headers), { Referer: baseUrl });
-            delete cleanHeaders["User-Agent"];
-            delete cleanHeaders["sec-ch-ua"];
-            delete cleanHeaders["sec-ch-ua-mobile"];
-            delete cleanHeaders["sec-ch-ua-platform"];
-            delete cleanHeaders["Cookie"];
             const wafResult = yield openWebView(baseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -1076,8 +1182,8 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
         const gfHref = $vLink(el).attr("href");
         if (gfHref) {
           const gfStream = yield resolveGofileLink(gfHref, axios, providerContext);
-          if (gfStream && !streamLinks.some((s) => s.link === gfStream.link)) {
-            streamLinks.push(gfStream);
+          if (gfStream && !streamLinks2.some((s) => s.link === gfStream.link)) {
+            streamLinks2.push(gfStream);
           }
         }
       }
@@ -1089,8 +1195,8 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
       }
       if (vcloudLink == null ? void 0 : vcloudLink.includes("gofile.io")) {
         const gfStream = yield resolveGofileLink(vcloudLink, axios, providerContext);
-        if (gfStream && !streamLinks.some((s) => s.link === gfStream.link)) {
-          streamLinks.push(gfStream);
+        if (gfStream && !streamLinks2.some((s) => s.link === gfStream.link)) {
+          streamLinks2.push(gfStream);
         }
       }
       let vcloudText = "";
@@ -1105,11 +1211,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
             );
             const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
             const cleanHeaders2 = __spreadProps(__spreadValues({}, headers), { Referer: vcloudBaseUrl });
-            delete cleanHeaders2["User-Agent"];
-            delete cleanHeaders2["sec-ch-ua"];
-            delete cleanHeaders2["sec-ch-ua-mobile"];
-            delete cleanHeaders2["sec-ch-ua-platform"];
-            delete cleanHeaders2["Cookie"];
             const wafResult = yield openWebView(vcloudBaseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -1122,48 +1223,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
             const retryRes = yield axios.get(vcloudLink, { headers, signal });
             vcloudText = retryRes.data;
           } else {
-            if (((_c = error.response) == null ? void 0 : _c.status) === 403 && !openWebView) {
-              console.log(
-                `hubcloudExtractor: 403 Forbidden for ${vcloudLink}, but openWebView solver is not available!`
-              );
-            }
-            let fetchRes = yield fetch(vcloudLink, {
-              headers,
-              signal,
-              redirect: "follow"
-            });
-            if (fetchRes.status === 403 && openWebView) {
-              console.log(
-                `hubcloudExtractor: WAF detected (403) for ${vcloudLink}, using solver...`
-              );
-              const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
-              const cleanHeaders3 = __spreadProps(__spreadValues({}, headers), { Referer: vcloudBaseUrl });
-              delete cleanHeaders3["User-Agent"];
-              delete cleanHeaders3["sec-ch-ua"];
-              delete cleanHeaders3["sec-ch-ua-mobile"];
-              delete cleanHeaders3["sec-ch-ua-platform"];
-              delete cleanHeaders3["Cookie"];
-              const wafResult = yield openWebView(vcloudBaseUrl, {
-                title: "Solve the captcha below and click done",
-                description: "Required to bypass anti-bot protection.",
-                headers: cleanHeaders3,
-                waitForCookie: "cf_clearance",
-                force: true
-              });
-              if (wafResult.userAgent) headers["User-Agent"] = wafResult.userAgent;
-              headers["Cookie"] = (headers["Cookie"] ? headers["Cookie"] + "; " : "") + wafResult.cookies;
-              fetchRes = yield fetch(vcloudLink, {
-                headers,
-                signal,
-                redirect: "follow"
-              });
-            }
-            if (!fetchRes.ok) {
-              throw new Error(
-                `HTTP ${fetchRes.status} ${fetchRes.statusText} | URL ${vcloudLink}`
-              );
-            }
-            vcloudText = yield fetchRes.text();
+            throw error;
           }
         }
       }
@@ -1187,49 +1247,65 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
                 );
                 link2 = redirectedPixelDrainUrl;
               }
-              const token = (_d = link2.split("/").pop()) == null ? void 0 : _d.split("?")[0];
+              const token = (_c = link2.split("/").pop()) == null ? void 0 : _c.split("?")[0];
               const baseUrl2 = link2.split("/").slice(0, -2).join("/");
               link2 = `${baseUrl2}/api/file/${token}?download`;
             }
-            streamLinks.push({ server: "Pixeldrain", link: link2, type: "mkv" });
+            streamLinks2.push({ server: "Pixeldrain", link: link2, type: "mkv" });
             break;
           case ((link2 == null ? void 0 : link2.includes(".dev")) && !(link2 == null ? void 0 : link2.includes("/?id="))):
-            streamLinks.push({ server: "CF Worker", link: link2, type: "mkv" });
+            streamLinks2.push({ server: "CF Worker", link: link2, type: "mkv" });
             break;
           case ((link2 == null ? void 0 : link2.includes("hubcloud")) || (link2 == null ? void 0 : link2.includes("/?id="))):
             try {
-              const newLinkRes = yield fetch(link2, {
-                method: "HEAD",
-                headers,
-                signal,
-                redirect: "manual"
-              });
               let newLink = link2;
-              if (newLinkRes.status >= 300 && newLinkRes.status < 400) {
-                newLink = newLinkRes.headers.get("location") || link2;
-              } else if (newLinkRes.url && newLinkRes.url !== link2) {
-                newLink = newLinkRes.url;
-              } else {
-                newLink = newLinkRes.headers.get("location") || link2;
+              try {
+                if (typeof fetch !== "undefined") {
+                  const fRes = yield fetch(link2, {
+                    headers,
+                    signal,
+                    redirect: "follow"
+                  });
+                  if (fRes.url && fRes.url.includes("googleusercontent")) {
+                    newLink = fRes.url.split("?link=")[1] || fRes.url;
+                  } else if (fRes.url && fRes.url !== link2) {
+                    newLink = fRes.url;
+                  }
+                }
+              } catch (e) {
               }
-              if (newLink.includes("googleusercontent")) {
-                newLink = newLink.split("?link=")[1];
-              } else {
-                const newLinkRes2 = yield fetch(newLink, {
-                  method: "HEAD",
-                  headers,
-                  signal,
-                  redirect: "manual"
-                });
-                if (newLinkRes2.status >= 300 && newLinkRes2.status < 400) {
-                  newLink = ((_e = newLinkRes2.headers.get("location")) == null ? void 0 : _e.split("?link=")[1]) || newLink;
-                } else if (newLinkRes2.url && newLinkRes2.url !== newLink) {
-                  newLink = newLinkRes2.url.split("?link=")[1] || newLinkRes2.url;
-                } else {
-                  newLink = ((_f = newLinkRes2.headers.get("location")) == null ? void 0 : _f.split("?link=")[1]) || newLink;
+              if (!newLink.includes("googleusercontent")) {
+                try {
+                  const res1 = yield axios.get(newLink, {
+                    headers,
+                    signal,
+                    maxRedirects: 0,
+                    validateStatus: (s) => s >= 200 && s < 400
+                  });
+                  if ((_d = res1.headers) == null ? void 0 : _d["location"]) {
+                    newLink = res1.headers["location"];
+                  }
+                  if (newLink.includes("googleusercontent")) {
+                    newLink = newLink.split("?link=")[1] || newLink;
+                  } else if (newLink.includes("http")) {
+                    const res2 = yield axios.get(newLink, {
+                      headers,
+                      signal,
+                      maxRedirects: 0,
+                      validateStatus: (s) => s >= 200 && s < 400
+                    });
+                    if ((_e = res2.headers) == null ? void 0 : _e["location"]) {
+                      const loc2 = res2.headers["location"];
+                      newLink = loc2.includes("?link=") ? loc2.split("?link=")[1] : loc2;
+                    }
+                  }
+                } catch (e) {
                 }
               }
-              streamLinks.push({
+              if (newLink.includes("?link=")) {
+                newLink = newLink.split("?link=")[1] || newLink;
+              }
+              streamLinks2.push({
                 server: "GDrive (download only)",
                 link: newLink,
                 type: "mkv"
@@ -1241,21 +1317,21 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
           case (link2 == null ? void 0 : link2.includes("gofile.io")):
             try {
               const gfStream = yield resolveGofileLink(link2, axios, providerContext);
-              if (gfStream && !streamLinks.some((s) => s.link === gfStream.link)) {
-                streamLinks.push(gfStream);
+              if (gfStream && !streamLinks2.some((s) => s.link === gfStream.link)) {
+                streamLinks2.push(gfStream);
               }
             } catch (error) {
               console.log("hubcloudExtractor error in gofile link: ", error);
             }
             break;
           case (link2 == null ? void 0 : link2.includes("cloudflarestorage")):
-            streamLinks.push({ server: "CF Storage", link: link2, type: "mkv" });
+            streamLinks2.push({ server: "CF Storage", link: link2, type: "mkv" });
             break;
           case ((link2 == null ? void 0 : link2.includes("fastdl")) || (link2 == null ? void 0 : link2.includes("fsl."))):
-            streamLinks.push({ server: "FastDl", link: link2, type: "mkv" });
+            streamLinks2.push({ server: "FastDl", link: link2, type: "mkv" });
             break;
           case (link2.includes("hubcdn") && !link2.includes("/?id=")):
-            streamLinks.push({
+            streamLinks2.push({
               server: "HubCdn",
               link: link2,
               type: "mkv"
@@ -1264,7 +1340,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
           default:
             if ((link2 == null ? void 0 : link2.includes(".mkv")) || (link2 == null ? void 0 : link2.includes("?token="))) {
               const serverName = "CF Worker";
-              streamLinks.push({ server: serverName, link: link2, type: "mkv" });
+              streamLinks2.push({ server: serverName, link: link2, type: "mkv" });
             }
             break;
         }
@@ -1272,7 +1348,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
       let preferredServer = "auto";
       try {
         const specificKey = providerValue ? `${providerValue}_preferredDownloadServer` : "";
-        preferredServer = ((specificKey ? yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get(specificKey) : void 0) || (yield (_h = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _h.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
+        preferredServer = ((specificKey ? yield (_f = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _f.get(specificKey) : void 0) || (yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
       } catch (e) {
       }
       const getPriority = (serverName = "") => {
@@ -1281,51 +1357,28 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
           return 0;
         }
         if (isDownload) {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage") || s.includes("resumable")) return 2;
-          if (s.includes("gdrive") || s.includes("instant")) return 3;
+          if (s.includes("cf storage") || s.includes("storage") || s.includes("resumable")) return 1;
+          if (s.includes("gdrive") || s.includes("google") || s.includes("instant")) return 2;
+          if (s.includes("pixeldrain")) return 3;
           if (s.includes("gofile")) return 4;
-          if (s.includes("pixeldrain")) return 5;
-          if (s.includes("fastdl")) return 6;
-          if (s.includes("hubcdn")) return 7;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
+          if (s.includes("hubcdn")) return 6;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 8;
           return 10;
         } else {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage")) return 2;
+          if (s.includes("cf storage") || s.includes("storage")) return 1;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 2;
           if (s.includes("gofile")) return 3;
           if (s.includes("pixeldrain")) return 4;
-          if (s.includes("fastdl")) return 5;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
           if (s.includes("hubcdn")) return 6;
-          if (s.includes("gdrive")) return 7;
+          if (s.includes("gdrive") || s.includes("google")) return 7;
           return 10;
         }
       };
-      streamLinks.sort((a, b) => getPriority(a.server) - getPriority(b.server));
-      if (isDownload && streamLinks.length > 0) {
-        const isTopHealthy = yield checkStreamHealth(
-          streamLinks[0],
-          signal
-        );
-        if (!isTopHealthy) {
-          let healthyIndex = -1;
-          for (let i = 1; i < streamLinks.length; i++) {
-            const isHealthy = yield checkStreamHealth(
-              streamLinks[i],
-              signal
-            );
-            if (isHealthy) {
-              healthyIndex = i;
-              break;
-            }
-          }
-          if (healthyIndex > 0) {
-            const [workingStream] = streamLinks.splice(healthyIndex, 1);
-            streamLinks.unshift(workingStream);
-          }
-        }
-      }
-      console.log("streamLinks", streamLinks);
-      return streamLinks;
+      streamLinks2.sort((a, b) => getPriority(a.server) - getPriority(b.server));
+      console.log("streamLinks", streamLinks2);
+      return streamLinks2;
     } catch (error) {
       throwProviderError("HubCloud", `extract ${link}`, error);
     }
@@ -1376,7 +1429,7 @@ var init_hubcloud = __esm({
 // providers/extractors/gdflix.ts
 function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
       let wafCookies;
       try {
@@ -1400,7 +1453,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext)
       if (wafCookies) {
         headers["Cookie"] = wafCookies;
       }
-      const streamLinks = [];
+      const streamLinks2 = [];
       const res = yield axios(`${link}`, { headers, signal });
       console.log("gdflixExtractor", link);
       const data = res.data;
@@ -1441,7 +1494,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext)
           );
           const resumeBotDownloadData = yield resumeBotDownload.json();
           console.log("resumeBotDownloadData", resumeBotDownloadData.url);
-          streamLinks.push({
+          streamLinks2.push({
             server: "ResumeBot",
             link: resumeBotDownloadData.url,
             type: "mkv"
@@ -1453,7 +1506,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext)
           const $resumeDrive = cheerio.load(resumeDriveHtml);
           const resumeLink = $resumeDrive(".btn-success").attr("href");
           if (resumeLink) {
-            streamLinks.push({
+            streamLinks2.push({
               server: "ResumeCloud",
               link: resumeLink,
               type: "mkv"
@@ -1465,49 +1518,67 @@ function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext)
       }
       try {
         const seed = $drive(".btn-danger").attr("href") || "";
-        console.log("seed", seed);
-        if (!seed.includes("?url=")) {
-          const newLinkRes = yield axios.head(seed, { headers, signal });
-          console.log("newLinkRes", (_f = newLinkRes.request) == null ? void 0 : _f.responseURL);
-          const newLink = ((_i = (_h = (_g = newLinkRes.request) == null ? void 0 : _g.responseURL) == null ? void 0 : _h.split("?url=")) == null ? void 0 : _i[1]) || seed;
-          streamLinks.push({ server: "G-Drive", link: newLink, type: "mkv" });
-        } else {
-          const instantToken = seed.split("=")[1];
-          const InstantFromData = new FormData();
-          InstantFromData.append("keys", instantToken);
-          const videoSeedUrl = seed.split("/").slice(0, 3).join("/") + "/api";
-          const instantLinkRes = yield fetch(videoSeedUrl, {
-            method: "POST",
-            body: InstantFromData,
-            headers: {
-              "x-token": videoSeedUrl
+        if (seed && seed.startsWith("http")) {
+          if (seed.includes("url=")) {
+            const directPart = decodeURIComponent(seed.split("url=")[1]);
+            if (directPart && directPart.startsWith("http")) {
+              streamLinks2.push({ server: "Instant Download", link: directPart, type: "mkv" });
             }
-          });
-          const instantLinkData = yield instantLinkRes.json();
-          if (instantLinkData.error === false) {
-            const instantLink = instantLinkData.url;
-            streamLinks.push({
-              server: "G-Drive (download only)",
-              link: instantLink,
-              type: "mkv"
+          }
+          try {
+            const vRes = yield axios.get(seed, {
+              headers: __spreadProps(__spreadValues({}, headers), { Referer: link }),
+              maxRedirects: 0,
+              validateStatus: (s) => s >= 200 && s < 400,
+              signal
             });
-          } else {
-            console.log("Instant link not found", instantLinkData);
+            const loc = (_f = vRes.headers) == null ? void 0 : _f.location;
+            if (loc) {
+              let directGoogleUrl = null;
+              if (loc.includes("url=")) {
+                directGoogleUrl = decodeURIComponent(loc.split("url=")[1]);
+              } else if (loc.includes("googleusercontent.com") || loc.startsWith("http")) {
+                directGoogleUrl = loc;
+              }
+              if (directGoogleUrl && directGoogleUrl.startsWith("http")) {
+                streamLinks2.push({ server: "Instant Download", link: directGoogleUrl, type: "mkv" });
+              }
+            } else if (typeof vRes.data === "string") {
+              const upMatch = vRes.data.match(/window\.location\.href\s*=\s*["']([^"']+)["']/);
+              if (upMatch) {
+                const upPath = upMatch[1];
+                const vOrigin = new URL(seed).origin;
+                const upUrl = upPath.startsWith("http") ? upPath : vOrigin + upPath;
+                const upRes = yield axios.get(upUrl, {
+                  headers: __spreadProps(__spreadValues({}, headers), { Referer: seed }),
+                  signal
+                });
+                const loc2 = (_g = upRes.headers) == null ? void 0 : _g.location;
+                if (loc2 && loc2.startsWith("http")) {
+                  streamLinks2.push({ server: "Instant Download", link: loc2, type: "mkv" });
+                } else if (typeof upRes.data === "string") {
+                  const $up = cheerio.load(upRes.data);
+                  const dlBtn = $up("#downloadBtn, a.btn-danger, a.btn-success").attr("href");
+                  if (dlBtn && dlBtn.startsWith("http")) {
+                    streamLinks2.push({ server: "Instant Download", link: dlBtn, type: "mkv" });
+                  }
+                }
+              }
+            }
+          } catch (e) {
           }
         }
-      } catch (err) {
-        console.log("Instant link not found", err);
+      } catch (e) {
       }
-      return streamLinks;
+      return streamLinks2;
     } catch (error) {
-      throwProviderError("GDFlix", `extract ${link}`, error);
+      return streamLinks;
     }
   });
 }
 var init_gdflix = __esm({
   "providers/extractors/gdflix.ts"() {
     "use strict";
-    init_providerErrors();
   }
 });
 
@@ -1535,7 +1606,7 @@ function getWithWAF3(url, axios, openWebView, headers, customHeaders) {
         });
         return yield axios.get(url, {
           headers: __spreadProps(__spreadValues({}, mergedHeaders), {
-            Cookie: (mergedHeaders.Cookie ? mergedHeaders.Cookie + "; " : "") + wafResult.cookies
+            Cookie: (mergedHeaders.Cookie ? mergedHeaders.Cookie + "; " : "") + (wafResult.cookies || wafResult.cookie)
           })
         });
       }
@@ -1543,18 +1614,92 @@ function getWithWAF3(url, axios, openWebView, headers, customHeaders) {
     }
   });
 }
+function parseSvelteData3(html) {
+  const match = html.match(/resolve\(\{\s*id:\s*\d+,\s*data:/);
+  if (!match || match.index === void 0) return null;
+  const start = match.index + match[0].length;
+  const errorIdx = html.indexOf(",error:", start);
+  if (errorIdx === -1) return null;
+  const dataStr = html.substring(start, errorIdx);
+  try {
+    return Function(`"use strict"; return (${dataStr});`)();
+  } catch (e) {
+    return null;
+  }
+}
 function extractKmhdLink(katlink, providerContext) {
   return __async(this, null, function* () {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
     const { axios, openWebView, commonHeaders } = providerContext;
-    const res = yield getWithWAF3(katlink, axios, openWebView, commonHeaders, {
-      Cookie: "unlocked=true"
-    });
-    const data = res.data;
-    const hubDriveRes = data.match(/hubdrive_res:\s*"([^"]+)"/)[1];
-    const hubDriveLink = data.match(
-      /hubdrive_res\s*:\s*{[^}]*?link\s*:\s*"([^"]+)"/
-    )[1];
-    return hubDriveLink + hubDriveRes;
+    let origin = "https://links.kmhd.me";
+    try {
+      origin = new URL(katlink).origin;
+    } catch (e) {
+    }
+    let pageData = "";
+    try {
+      const res = yield getWithWAF3(katlink, axios, openWebView, commonHeaders, {
+        Cookie: "unlocked=true",
+        Referer: origin + "/"
+      });
+      pageData = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+    } catch (e) {
+      console.log("getWithWAF error for katlink:", katlink, e);
+    }
+    if (pageData) {
+      const parsed = parseSvelteData3(pageData);
+      const uploadLinks = ((_a = parsed == null ? void 0 : parsed.val) == null ? void 0 : _a.upload_links) || ((_c = (_b = parsed == null ? void 0 : parsed.data) == null ? void 0 : _b.val) == null ? void 0 : _c.upload_links);
+      const linksMeta = (parsed == null ? void 0 : parsed.links) || ((_d = parsed == null ? void 0 : parsed.data) == null ? void 0 : _d.links);
+      const hubId = uploadLinks == null ? void 0 : uploadLinks.hubdrive_res;
+      if (hubId && hubId !== "None") {
+        const hubBase = ((_e = linksMeta == null ? void 0 : linksMeta.hubdrive_res) == null ? void 0 : _e.link) || "https://hubcloud.cx/drive/";
+        return hubBase + hubId;
+      }
+      const gdId = uploadLinks == null ? void 0 : uploadLinks.gdflix_res;
+      if (gdId && gdId !== "None") {
+        const gdBase = ((_f = linksMeta == null ? void 0 : linksMeta.gdflix_res) == null ? void 0 : _f.link) || "https://gd.kmhd.eu/file/";
+        return gdBase + gdId;
+      }
+      const hubMatch = (_g = pageData.match(/hubdrive_res:\s*"([^"]+)"/)) == null ? void 0 : _g[1];
+      if (hubMatch && hubMatch !== "None") {
+        const hubLinkMatch = (_i = (_h = pageData.match(
+          /hubdrive_res\s*:\s*{[^}]*?link\s*:\s*"([^"]+)"/
+        )) == null ? void 0 : _h[1]) == null ? void 0 : _i.replace("hubcloud.foo", "hubcloud.cx");
+        const base = hubLinkMatch || "https://hubcloud.cx/drive/";
+        return base + hubMatch;
+      }
+    }
+    const fileIdMatch = katlink.match(/[\w]+_[a-f0-9]{8}/);
+    if (fileIdMatch) {
+      const fileId = fileIdMatch[0];
+      const dynamicToken = (_j = pageData.match(/"PUBLIC_TOKEN"\s*:\s*"([^"]+)"/)) == null ? void 0 : _j[1];
+      const token = dynamicToken || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTgwNzQ4NDIzMywiaWF0IjoxNzA3NDg0MjMzfQ.7u5bF9PcMhvClSDZgsd6EU-CQnp1Ec--wsezkDEgiZo";
+      const chibiMatch = (_k = pageData.match(
+        /"PUBLIC_CHIBI_PATH"\s*:\s*"https?:\/\/([^"\/]+)"/
+      )) == null ? void 0 : _k[1];
+      const apiHost = chibiMatch ? chibiMatch.replace(/^upload-[^.]+\./, "api.") : "api.dandndn.one";
+      try {
+        const res = yield axios.get(`https://${apiHost}/api/v1/file/${fileId}`, {
+          headers: __spreadProps(__spreadValues({
+            Authorization: `Bearer ${token}`
+          }, commonHeaders), {
+            Origin: origin,
+            Referer: origin + "/"
+          })
+        });
+        const hubId = (_m = (_l = res.data) == null ? void 0 : _l.upload_links) == null ? void 0 : _m.hubdrive_res;
+        if (hubId && hubId !== "None") {
+          return `https://hubcloud.cx/drive/${hubId}`;
+        }
+        const gdId = (_o = (_n = res.data) == null ? void 0 : _n.upload_links) == null ? void 0 : _o.gdflix_res;
+        if (gdId && gdId !== "None") {
+          return `https://new.gdflix.cfd/file/${gdId}`;
+        }
+      } catch (e) {
+        console.log(`${apiHost} error, trying fallback...`, e);
+      }
+    }
+    return katlink;
   });
 }
 var getStream;
@@ -1573,10 +1718,9 @@ var init_stream = __esm({
         isDownload
       }) {
         const { axios, cheerio, commonHeaders, openWebView } = providerContext;
-        const streamLinks = [];
         console.log("katGetStream", link);
         try {
-          if (link.includes("gdflix")) {
+          if (link.includes("gdflix") || link.includes("gd.kmhd")) {
             return yield gdflixExtractor(
               link,
               signal,
@@ -1586,8 +1730,18 @@ var init_stream = __esm({
               providerContext
             );
           }
-          if (link.includes("kmhd")) {
+          if (link.includes("kmhd") || link.includes("kmphotos")) {
             const hubcloudLink = yield extractKmhdLink(link, providerContext);
+            if (hubcloudLink.includes("gdflix") || hubcloudLink.includes("gd.kmhd")) {
+              return yield gdflixExtractor(
+                hubcloudLink,
+                signal,
+                axios,
+                cheerio,
+                commonHeaders,
+                providerContext
+              );
+            }
             return yield hubcloudExtractor(
               hubcloudLink,
               signal,
@@ -1599,67 +1753,19 @@ var init_stream = __esm({
               "katmovies"
             );
           }
-          if (link.includes("gdflix")) {
-            try {
-              const resumeDrive = link.replace("/file", "/zfile");
-              const resumeDriveRes = yield getWithWAF3(
-                resumeDrive,
-                axios,
-                openWebView,
-                commonHeaders
-              );
-              const resumeDriveHtml = resumeDriveRes.data;
-              const $resumeDrive = cheerio.load(resumeDriveHtml);
-              const resumeLink = $resumeDrive(".btn-success").attr("href");
-              console.log("resumeLink", resumeLink);
-              if (resumeLink) {
-                streamLinks.push({
-                  server: "ResumeCloud",
-                  link: resumeLink,
-                  type: "mkv"
-                });
-              }
-            } catch (err) {
-              console.log("Resume link not found");
-            }
-            try {
-              const driveres = yield getWithWAF3(
-                link,
-                axios,
-                openWebView,
-                commonHeaders
-              );
-              const $drive = cheerio.load(driveres.data);
-              const seed = $drive(".btn-danger").attr("href") || "";
-              const instantToken = seed.split("=")[1];
-              const InstantFromData = new FormData();
-              InstantFromData.append("keys", instantToken);
-              const videoSeedUrl = seed.split("/").slice(0, 3).join("/") + "/api";
-              const instantLinkRes = yield fetch(videoSeedUrl, {
-                method: "POST",
-                body: InstantFromData,
-                headers: {
-                  "x-token": videoSeedUrl
-                }
-              });
-              const instantLinkData = yield instantLinkRes.json();
-              console.log("instantLinkData", instantLinkData);
-              if (instantLinkData.error === false) {
-                const instantLink = instantLinkData.url;
-                streamLinks.push({
-                  server: "Gdrive-Instant",
-                  link: instantLink,
-                  type: "mkv"
-                });
-              } else {
-                console.log("Instant link not found", instantLinkData);
-              }
-            } catch (err) {
-              console.log("Instant link not found", err);
-            }
-            return streamLinks;
+          if (link.includes("hubcloud")) {
+            return yield hubcloudExtractor(
+              link,
+              signal,
+              axios,
+              cheerio,
+              commonHeaders,
+              providerContext,
+              isDownload,
+              "katmovies"
+            );
           }
-          const stereams = yield hubcloudExtractor(
+          return yield hubcloudExtractor(
             link,
             signal,
             axios,
@@ -1669,9 +1775,8 @@ var init_stream = __esm({
             isDownload,
             "katmovies"
           );
-          return stereams;
-        } catch (error) {
-          throwProviderError("KatMovies", "stream", error);
+        } catch (err) {
+          throwProviderError("KatMovies", "stream", err);
         }
       });
     };
@@ -1681,7 +1786,6 @@ var init_stream = __esm({
 // providers/katmovies/episodes.ts
 var episodes_exports = {};
 __export(episodes_exports, {
-  extractKmhdLink: () => extractKmhdLink2,
   getEpisodes: () => getEpisodes
 });
 function getWithWAF4(url, axios, openWebView, headers, customHeaders) {
@@ -1703,7 +1807,7 @@ function getWithWAF4(url, axios, openWebView, headers, customHeaders) {
         });
         return yield axios.get(url, {
           headers: __spreadProps(__spreadValues({}, mergedHeaders), {
-            Cookie: (mergedHeaders.Cookie ? mergedHeaders.Cookie + "; " : "") + wafResult.cookies
+            Cookie: (mergedHeaders.Cookie ? mergedHeaders.Cookie + "; " : "") + (wafResult.cookies || wafResult.cookie)
           })
         });
       }
@@ -1711,25 +1815,59 @@ function getWithWAF4(url, axios, openWebView, headers, customHeaders) {
     }
   });
 }
-function extractKmhdLink2(katlink, providerContext) {
+function extractKmhdEpisodes(katlink, providerContext, cachedData) {
   return __async(this, null, function* () {
+    var _a, _b, _c, _d;
     const { axios, openWebView, commonHeaders } = providerContext;
-    const res = yield getWithWAF4(katlink, axios, openWebView, commonHeaders);
-    const data = res.data;
-    const hubDriveRes = data.match(/hubdrive_res:\s*"([^"]+)"/)[1];
-    const hubDriveLink = data.match(
-      /hubdrive_res\s*:\s*{[^}]*?link\s*:\s*"([^"]+)"/
-    )[1];
-    return hubDriveLink + hubDriveRes;
-  });
-}
-function extractKmhdEpisodes(katlink, providerContext) {
-  return __async(this, null, function* () {
-    const { axios, openWebView, commonHeaders } = providerContext;
-    const res = yield getWithWAF4(katlink, axios, openWebView, commonHeaders);
-    const data = res.data;
-    const ids = data.match(/[\w]+_[a-f0-9]{8}/g);
-    return ids;
+    let origin = "https://links.kmhd.me";
+    try {
+      origin = new URL(katlink).origin;
+    } catch (e) {
+    }
+    let pageData = cachedData || "";
+    if (!pageData) {
+      try {
+        const res = yield getWithWAF4(katlink, axios, openWebView, commonHeaders, {
+          Cookie: "unlocked=true",
+          Referer: origin + "/"
+        });
+        pageData = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+      } catch (e) {
+      }
+    }
+    const packIdMatch = katlink.match(/[\w]+_[a-f0-9]{8}/);
+    if (packIdMatch && pageData) {
+      const packId = packIdMatch[0];
+      const dynamicToken = (_a = pageData.match(/"PUBLIC_TOKEN"\s*:\s*"([^"]+)"/)) == null ? void 0 : _a[1];
+      const token = dynamicToken || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTgwNzQ4NDIzMywiaWF0IjoxNzA3NDg0MjMzfQ.7u5bF9PcMhvClSDZgsd6EU-CQnp1Ec--wsezkDEgiZo";
+      const chibiMatch = (_b = pageData.match(
+        /"PUBLIC_CHIBI_PATH"\s*:\s*"https?:\/\/([^"\/]+)"/
+      )) == null ? void 0 : _b[1];
+      const apiHost = chibiMatch ? chibiMatch.replace(/^upload-[^.]+\./, "api.") : "api.dandndn.one";
+      try {
+        const res = yield axios.get(`https://${apiHost}/api/v1/file/${packId}`, {
+          headers: __spreadProps(__spreadValues({
+            Authorization: `Bearer ${token}`
+          }, commonHeaders), {
+            Origin: origin,
+            Referer: origin + "/"
+          })
+        });
+        if (((_d = (_c = res.data) == null ? void 0 : _c.zip_files) == null ? void 0 : _d.length) > 0) {
+          return res.data.zip_files;
+        }
+      } catch (e) {
+      }
+    }
+    try {
+      const ids = pageData.match(/[\w]+_[a-f0-9]{8}/g);
+      if (ids && ids.length > 0) {
+        return Array.from(new Set(ids));
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
   });
 }
 var getEpisodes;
@@ -1744,42 +1882,69 @@ var init_episodes = __esm({
         url,
         providerContext
       }) {
-        var _a;
+        var _a, _b;
         const { axios, cheerio, openWebView, commonHeaders } = providerContext;
         const episodesLink = [];
         try {
+          let parseSvelteData5 = function(html) {
+            const match = html.match(/resolve\(\{\s*id:\s*\d+,\s*data:/);
+            if (!match || match.index === void 0) return null;
+            const start = match.index + match[0].length;
+            const errorIdx = html.indexOf(",error:", start);
+            if (errorIdx === -1) return null;
+            const dataStr = html.substring(start, errorIdx);
+            try {
+              return Function(`"use strict"; return (${dataStr});`)();
+            } catch (e) {
+              return null;
+            }
+          };
+          var parseSvelteData4 = parseSvelteData5;
           const context = readCinemetaContext(url);
           const requestUrl = context.requestUrl;
           const finish = () => __async(null, null, function* () {
-            var _a2, _b;
+            var _a2, _b2;
             const quickDownload = yield (_a2 = providerContext.kvStore) == null ? void 0 : _a2.get("katmovies_quickDownload");
             if (!context.imdbId || !context.season) {
               return episodesLink.map((e) => __spreadProps(__spreadValues({}, e), {
                 quickDownload: quickDownload != null ? quickDownload : true
               }));
             }
-            const cinemeta = yield getCinemetaMeta(
-              context.imdbId,
-              "series",
-              providerContext
-            );
-            let enriched = enrichCinemetaEpisodes(
-              episodesLink,
-              cinemeta.videos || [],
-              context.season
-            );
-            const skipTimings = yield (_b = providerContext.kvStore) == null ? void 0 : _b.get("katmovies_skipTimings");
-            if (skipTimings != null ? skipTimings : true) {
-              enriched = yield enrichEpisodesWithSkipTimings(
-                enriched,
+            try {
+              let enriched = episodesLink;
+              const cinemeta = yield getCinemetaMeta(
                 context.imdbId,
-                context.season,
+                "series",
                 providerContext
               );
+              if (cinemeta) {
+                enriched = enrichCinemetaEpisodes(
+                  episodesLink,
+                  cinemeta.videos || [],
+                  context.season
+                );
+              }
+              const skipTimings = yield (_b2 = providerContext.kvStore) == null ? void 0 : _b2.get("katmovies_skipTimings");
+              if (skipTimings != null ? skipTimings : true) {
+                try {
+                  enriched = yield enrichEpisodesWithSkipTimings(
+                    enriched,
+                    context.imdbId,
+                    context.season,
+                    providerContext
+                  );
+                } catch (e) {
+                  console.warn("KatMovies: Skip timings failed", e);
+                }
+              }
+              return enriched.map((e) => __spreadProps(__spreadValues({}, e), {
+                quickDownload: quickDownload != null ? quickDownload : true
+              }));
+            } catch (e) {
+              return episodesLink.map((e2) => __spreadProps(__spreadValues({}, e2), {
+                quickDownload: quickDownload != null ? quickDownload : true
+              }));
             }
-            return enriched.map((e) => __spreadProps(__spreadValues({}, e), {
-              quickDownload: quickDownload != null ? quickDownload : true
-            }));
           });
           if (requestUrl.includes("gdflix")) {
             const baseUrl = (_a = requestUrl.split("/pack")) == null ? void 0 : _a[0];
@@ -1792,24 +1957,50 @@ var init_episodes = __esm({
             const data = res2.data;
             const $2 = cheerio.load(data);
             const links2 = $2(".list-group-item");
-            links2 == null ? void 0 : links2.map((i, link) => {
-              episodesLink.push({
-                title: $2(link).text() || "",
-                link: baseUrl + $2(link).find("a").attr("href") || ""
-              });
+            links2 == null ? void 0 : links2.each((i, link) => {
+              const href = $2(link).find("a").attr("href");
+              if (href) {
+                episodesLink.push({
+                  title: $2(link).text().trim() || `Episode ${i + 1}`,
+                  link: href.startsWith("http") ? href : baseUrl + href
+                });
+              }
             });
             if (episodesLink.length > 0) {
               return finish();
             }
           }
-          if (requestUrl.includes("/pack")) {
-            const epIds = yield extractKmhdEpisodes(requestUrl, providerContext);
-            epIds == null ? void 0 : epIds.forEach((id, index) => {
-              episodesLink.push({
-                title: `Episode ${index + 1}`,
-                link: requestUrl.split("/pack")[0] + "/file/" + id
+          if (requestUrl.includes("/pack") || requestUrl.includes("kmhd") || requestUrl.includes("kmphotos")) {
+            const res2 = yield getWithWAF4(
+              requestUrl,
+              axios,
+              openWebView,
+              commonHeaders
+            );
+            const data = res2.data;
+            const parsed = parseSvelteData5(data);
+            const info = (parsed == null ? void 0 : parsed.info) || ((_b = parsed == null ? void 0 : parsed.data) == null ? void 0 : _b.info);
+            const hostBase = requestUrl.split("/pack")[0].split("/file")[0];
+            if (info && typeof info === "object") {
+              for (const [id, ep] of Object.entries(info)) {
+                const epTitle = (ep == null ? void 0 : ep.name) ? ep.name.replace(/\.mkv$/i, "").replace(/\./g, " ").trim() : id;
+                episodesLink.push({
+                  title: epTitle,
+                  link: `${hostBase}/file/${id}`
+                });
+              }
+              if (episodesLink.length > 0) return finish();
+            }
+            const epIds = yield extractKmhdEpisodes(requestUrl, providerContext, data);
+            if (epIds && epIds.length > 0) {
+              epIds.forEach((id, index) => {
+                episodesLink.push({
+                  title: `Episode ${index + 1}`,
+                  link: `${hostBase}/file/${id}`
+                });
               });
-            });
+              return finish();
+            }
           }
           const res = yield getWithWAF4(
             requestUrl,
@@ -1817,17 +2008,20 @@ var init_episodes = __esm({
             openWebView,
             commonHeaders,
             {
-              Cookie: "_ga_GNR438JY8N=GS1.1.1722240350.5.0.1722240350.0.0.0; _ga=GA1.1.372196696.1722150754; unlocked=true"
+              Cookie: "unlocked=true"
             }
           );
           const episodeData = res.data;
           const $ = cheerio.load(episodeData);
-          const links = $(".autohyperlink");
-          links == null ? void 0 : links.map((i, link) => {
-            episodesLink.push({
-              title: $(link).parent().children().remove().end().text() || "",
-              link: $(link).attr("href") || ""
-            });
+          const links = $(".autohyperlink, a[href*='/file/'], a[href*='hubcloud'], a[href*='gdflix']");
+          links == null ? void 0 : links.each((i, link) => {
+            const href = $(link).attr("href");
+            if (href) {
+              episodesLink.push({
+                title: $(link).text().trim() || `Episode ${i + 1}`,
+                link: href
+              });
+            }
           });
           return finish();
         } catch (err) {

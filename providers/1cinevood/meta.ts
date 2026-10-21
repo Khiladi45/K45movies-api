@@ -1,5 +1,4 @@
 import { Info, Link, ProviderContext } from "../types";
-import { getBaseUrl } from "../getBaseUrl";
 import { throwProviderError } from "../providerErrors";
 import {
   addCinemetaContext,
@@ -7,38 +6,7 @@ import {
   getCinemetaMeta,
   getCinemetaSeason,
 } from "../getCinemetaMeta";
-
-async function getWithWAF(
-  url: string,
-  axios: any,
-  openWebView: any,
-  headers: any,
-): Promise<any> {
-  const baseUrl = url.split("/").slice(0, 3).join("/");
-  try {
-    return await axios.get(url, { headers: { ...headers, Referer: baseUrl } });
-  } catch (error: any) {
-    if (error.response?.status === 403 && openWebView) {
-      console.log(`WAF detected (403) for ${url}, using solver...`);
-      const wafResult = await openWebView(baseUrl, {
-        title: "Solve the captcha below and click done",
-        description: "Required to bypass anti-bot protection.",
-        headers: { ...headers, Referer: baseUrl },
-        waitForCookie: "cf_clearance",
-        // force: true,
-      });
-      return await axios.get(url, {
-        headers: {
-          ...headers,
-          Referer: baseUrl,
-          "User-Agent": wafResult.userAgent || headers["User-Agent"],
-          Cookie: wafResult.cookies || wafResult.cookie,
-        },
-      });
-    }
-    throw error;
-  }
-}
+import { getCinewoodBaseUrl, getWithWAF } from "./helper";
 
 export const getMeta = async function ({
   link,
@@ -48,7 +16,7 @@ export const getMeta = async function ({
   providerContext: ProviderContext;
 }): Promise<Info> {
   const { axios, cheerio, commonHeaders, openWebView } = providerContext;
-  const baseUrl = await getBaseUrl("1cinevood");
+  const baseUrl = await getCinewoodBaseUrl();
   const url = new URL(link, `${baseUrl}/`).href;
 
   try {
@@ -258,22 +226,25 @@ export const getMeta = async function ({
       );
       return result;
     }
-    if (result.type === "series" && cinemeta.type === "series") {
-      result.linkList = result.linkList.map((item) => {
-        if (!item.episodesLink) return item;
-        const season = getCinemetaSeason(item.title);
-        if (!season) return item;
-        return {
-          ...item,
-          episodesLink: addCinemetaContext(
-            new URL(item.episodesLink, url).href,
-            imdbId,
-            season,
-          ),
-        };
-      });
+    if (cinemeta) {
+      if (result.type === "series" && cinemeta.type === "series") {
+        result.linkList = result.linkList.map((item) => {
+          if (!item.episodesLink) return item;
+          const season = getCinemetaSeason(item.title);
+          if (!season) return item;
+          return {
+            ...item,
+            episodesLink: addCinemetaContext(
+              new URL(item.episodesLink, url).href,
+              imdbId,
+              season,
+            ),
+          };
+        });
+      }
+      return applyCinemetaMeta(result, cinemeta);
     }
-    return applyCinemetaMeta(result, cinemeta);
+    return result;
   } catch (err) {
     throwProviderError("1CineVood", "metadata", err);
   }

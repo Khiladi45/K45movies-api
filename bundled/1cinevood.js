@@ -72,6 +72,35 @@ var init_catalog = __esm({
   }
 });
 
+// providers/providerErrors.ts
+function getErrorMessage(error) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch (e) {
+    return String(error);
+  }
+}
+function throwProviderError(provider, operation, error) {
+  var _a, _b;
+  const response = error == null ? void 0 : error.response;
+  const status = response == null ? void 0 : response.status;
+  const statusText = response == null ? void 0 : response.statusText;
+  const url = ((_a = response == null ? void 0 : response.config) == null ? void 0 : _a.url) || ((_b = error == null ? void 0 : error.config) == null ? void 0 : _b.url);
+  const details = [
+    status ? `HTTP ${status}${statusText ? ` ${statusText}` : ""}` : "",
+    url ? `URL ${url}` : "",
+    getErrorMessage(error)
+  ].filter(Boolean);
+  throw new Error(`${provider} ${operation} failed: ${details.join(" | ")}`);
+}
+var init_providerErrors = __esm({
+  "providers/providerErrors.ts"() {
+    "use strict";
+  }
+});
+
 // providers/getBaseUrl.ts
 function getCache() {
   var _a;
@@ -119,7 +148,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue) => __async(null, null, function* () {
       var _a, _b;
@@ -134,41 +163,38 @@ var init_getBaseUrl = __esm({
   }
 });
 
-// providers/providerErrors.ts
-function getErrorMessage(error) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch (e) {
-    return String(error);
-  }
+// providers/1cinevood/helper.ts
+function getCinewoodBaseUrl() {
+  return __async(this, null, function* () {
+    if (resolvedBaseUrl) return resolvedBaseUrl;
+    try {
+      let url = yield getBaseUrl("1cinevood");
+      if (!url || url.includes("cinevood.rocks")) {
+        try {
+          const res = yield fetch(url || "https://cinevood.rocks", {
+            method: "HEAD",
+            redirect: "follow"
+          });
+          if (res.url) {
+            resolvedBaseUrl = new URL(res.url).origin;
+            return resolvedBaseUrl;
+          }
+        } catch (e) {
+        }
+        resolvedBaseUrl = "https://new1.cinevood.cv";
+        return resolvedBaseUrl;
+      }
+      resolvedBaseUrl = url.replace(/\/+$/, "");
+      return resolvedBaseUrl;
+    } catch (e) {
+      return "https://new1.cinevood.cv";
+    }
+  });
 }
-function throwProviderError(provider, operation, error) {
-  var _a, _b;
-  const response = error == null ? void 0 : error.response;
-  const status = response == null ? void 0 : response.status;
-  const statusText = response == null ? void 0 : response.statusText;
-  const url = ((_a = response == null ? void 0 : response.config) == null ? void 0 : _a.url) || ((_b = error == null ? void 0 : error.config) == null ? void 0 : _b.url);
-  const details = [
-    status ? `HTTP ${status}${statusText ? ` ${statusText}` : ""}` : "",
-    url ? `URL ${url}` : "",
-    getErrorMessage(error)
-  ].filter(Boolean);
-  throw new Error(`${provider} ${operation} failed: ${details.join(" | ")}`);
+function isWafChallenge(html) {
+  if (!html || typeof html !== "string") return false;
+  return html.includes("<title>Just a moment...</title>") || html.includes("challenges.cloudflare.com") || html.includes("cf-mitigated") || html.includes("cf-chl-widget") || html.includes("Attention Required! | Cloudflare") || html.includes("Cloudflare Ray ID") && html.includes("Please wait");
 }
-var init_providerErrors = __esm({
-  "providers/providerErrors.ts"() {
-    "use strict";
-  }
-});
-
-// providers/1cinevood/posts.ts
-var posts_exports = {};
-__export(posts_exports, {
-  getPosts: () => getPosts,
-  getSearchPosts: () => getSearchPosts
-});
 function getWithWAF(url, axios, openWebView, headers) {
   return __async(this, null, function* () {
     var _a;
@@ -178,16 +204,21 @@ function getWithWAF(url, axios, openWebView, headers) {
     } catch (error) {
       if (((_a = error.response) == null ? void 0 : _a.status) === 403 && openWebView) {
         console.log(`WAF detected (403) for ${url}, using solver...`);
-        const wafResult = yield openWebView(baseUrl, {
+        const wafResult = yield openWebView(url, {
           title: "Solve the captcha below and click done",
           description: "Required to bypass anti-bot protection.",
           headers: __spreadProps(__spreadValues({}, headers), { Referer: baseUrl }),
           waitForCookie: "cf_clearance",
           force: true
         });
-        return yield axios.get(url, {
+        if (wafResult.data && !isWafChallenge(wafResult.data) && wafResult.data.trim().length > 50) {
+          return { data: wafResult.data };
+        }
+        const targetUrl = wafResult.url || url;
+        const targetBaseUrl = targetUrl.split("/").slice(0, 3).join("/");
+        return yield axios.get(targetUrl, {
           headers: __spreadProps(__spreadValues({}, headers), {
-            Referer: baseUrl,
+            Referer: targetBaseUrl,
             "User-Agent": wafResult.userAgent || headers["User-Agent"],
             Cookie: wafResult.cookies || wafResult.cookie
           })
@@ -197,6 +228,21 @@ function getWithWAF(url, axios, openWebView, headers) {
     }
   });
 }
+var resolvedBaseUrl;
+var init_helper = __esm({
+  "providers/1cinevood/helper.ts"() {
+    "use strict";
+    init_getBaseUrl();
+    resolvedBaseUrl = "";
+  }
+});
+
+// providers/1cinevood/posts.ts
+var posts_exports = {};
+__export(posts_exports, {
+  getPosts: () => getPosts,
+  getSearchPosts: () => getSearchPosts
+});
 function getPosts(_0) {
   return __async(this, arguments, function* ({
     filter,
@@ -232,7 +278,7 @@ function fetchPosts(_0) {
     providerContext
   }) {
     try {
-      const baseUrl = yield getBaseUrl("1cinevood");
+      const baseUrl = yield getCinewoodBaseUrl();
       let url;
       if (query && query.trim()) {
         url = `${baseUrl}/?s=${encodeURIComponent(query)}${page > 1 ? `&paged=${page}` : ""}`;
@@ -286,8 +332,8 @@ function fetchPosts(_0) {
 var init_posts = __esm({
   "providers/1cinevood/posts.ts"() {
     "use strict";
-    init_getBaseUrl();
     init_providerErrors();
+    init_helper();
   }
 });
 
@@ -302,40 +348,73 @@ function getCache2() {
   }
   return state.__vegaCinemetaCache__;
 }
-function getCinemetaMeta(imdbId, type, providerContext) {
-  if (!/^tt\d+$/.test(imdbId)) {
-    return Promise.reject(new Error(`Invalid IMDb ID: ${imdbId}`));
-  }
-  const cache = getCache2();
-  const cached = cache[imdbId];
-  if (cached) {
-    if (isCinemetaPromise(cached)) {
-      return cached;
-    }
-    if (cached.name && cached.imdb_id === imdbId) {
-      return Promise.resolve(cached);
-    }
-    delete cache[imdbId];
-  }
-  const mediaType = type === "series" ? "series" : "movie";
-  const url = `${CINEMETA_BASE_URL}/${mediaType}/${imdbId}.json`;
-  const request = providerContext.axios.get(url).then((response) => {
+function resolveTmdbToImdb(tmdbId, type, providerContext) {
+  return __async(this, null, function* () {
     var _a;
-    const meta = (_a = response.data) == null ? void 0 : _a.meta;
-    if (!(meta == null ? void 0 : meta.name) || meta.imdb_id !== imdbId) {
-      throw new Error(`Cinemeta returned invalid metadata for ${imdbId}`);
+    try {
+      const tmdbType = type === "series" ? "tv" : "movie";
+      const res = yield providerContext.axios.get(
+        `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/external_ids?api_key=cfe422613b250f702980a3bbf9e90716`,
+        { timeout: 5e3 }
+      );
+      const imdb = (_a = res.data) == null ? void 0 : _a.imdb_id;
+      if (typeof imdb === "string" && /^tt\d+$/.test(imdb)) {
+        return imdb;
+      }
+    } catch (e) {
     }
-    cache[imdbId] = meta;
-    return meta;
-  }).catch((error) => {
-    delete cache[imdbId];
-    throw error;
+    return null;
   });
-  cache[imdbId] = request;
-  return request;
+}
+function getCinemetaMeta(id, type, providerContext) {
+  return __async(this, null, function* () {
+    var _a;
+    if (!id || typeof id !== "string") {
+      return null;
+    }
+    let cleanImdbId = (_a = id.match(/tt\d+/)) == null ? void 0 : _a[0];
+    if (!cleanImdbId) {
+      const tmdbMatch = id.match(/(?:themoviedb\.org\/(?:movie|tv)\/|tmdb:?)(\d+)/i) || id.match(/^(\d+)$/);
+      if (tmdbMatch) {
+        cleanImdbId = (yield resolveTmdbToImdb(tmdbMatch[1], type, providerContext)) || void 0;
+      }
+    }
+    if (!cleanImdbId) {
+      return null;
+    }
+    const cache = getCache2();
+    const cached = cache[cleanImdbId];
+    if (cached) {
+      if (isCinemetaPromise(cached)) {
+        return cached;
+      }
+      if (cached.name && cached.imdb_id === cleanImdbId) {
+        return cached;
+      }
+      delete cache[cleanImdbId];
+    }
+    const mediaType = type === "series" ? "series" : "movie";
+    const url = `${CINEMETA_BASE_URL}/${mediaType}/${cleanImdbId}.json`;
+    const request = providerContext.axios.get(url, { timeout: 8e3 }).then((response) => {
+      var _a2;
+      const meta = (_a2 = response.data) == null ? void 0 : _a2.meta;
+      if (!(meta == null ? void 0 : meta.name) || meta.imdb_id !== cleanImdbId) {
+        delete cache[cleanImdbId];
+        return null;
+      }
+      cache[cleanImdbId] = meta;
+      return meta;
+    }).catch(() => {
+      delete cache[cleanImdbId];
+      return null;
+    });
+    cache[cleanImdbId] = request;
+    return request;
+  });
 }
 function applyCinemetaMeta(info, meta) {
   var _a;
+  if (!meta) return info;
   return __spreadProps(__spreadValues({}, info), {
     title: meta.name || info.title,
     image: meta.background || meta.poster || info.image,
@@ -404,13 +483,17 @@ function getEpisodeNumber(title, season) {
     ...title.matchAll(/\bs\d{1,2}\s*e(\d{1,3})\b/gi),
     ...title.matchAll(/\bepisodes?\s*:?\s*(\d{1,3})\b/gi),
     ...title.matchAll(/\bep\s*\.?:?\s*(\d{1,3})\b/gi),
-    ...title.matchAll(/\be(\d{1,3})\b/gi)
+    ...title.matchAll(/\be(\d{1,3})\b/gi),
+    ...title.matchAll(/^\s*(\d{1,3})\s*[.:-]\s*/gi)
   ].map((match) => Number(match[1]));
   const episodes = [...new Set(matches.filter((episode) => episode > 0))];
   return episodes.length === 1 ? episodes[0] : void 0;
 }
 function enrichCinemetaEpisodes(episodes, videos, season) {
   var _a;
+  if (!videos || !Array.isArray(videos) || videos.length === 0 || !season) {
+    return episodes;
+  }
   const videosByEpisode = /* @__PURE__ */ new Map();
   let hasDuplicateVideo = false;
   for (const video of videos) {
@@ -450,41 +533,13 @@ var meta_exports = {};
 __export(meta_exports, {
   getMeta: () => getMeta
 });
-function getWithWAF2(url, axios, openWebView, headers) {
-  return __async(this, null, function* () {
-    var _a;
-    const baseUrl = url.split("/").slice(0, 3).join("/");
-    try {
-      return yield axios.get(url, { headers: __spreadProps(__spreadValues({}, headers), { Referer: baseUrl }) });
-    } catch (error) {
-      if (((_a = error.response) == null ? void 0 : _a.status) === 403 && openWebView) {
-        console.log(`WAF detected (403) for ${url}, using solver...`);
-        const wafResult = yield openWebView(baseUrl, {
-          title: "Solve the captcha below and click done",
-          description: "Required to bypass anti-bot protection.",
-          headers: __spreadProps(__spreadValues({}, headers), { Referer: baseUrl }),
-          waitForCookie: "cf_clearance"
-          // force: true,
-        });
-        return yield axios.get(url, {
-          headers: __spreadProps(__spreadValues({}, headers), {
-            Referer: baseUrl,
-            "User-Agent": wafResult.userAgent || headers["User-Agent"],
-            Cookie: wafResult.cookies || wafResult.cookie
-          })
-        });
-      }
-      throw error;
-    }
-  });
-}
 var getMeta;
 var init_meta = __esm({
   "providers/1cinevood/meta.ts"() {
     "use strict";
-    init_getBaseUrl();
     init_providerErrors();
     init_getCinemetaMeta();
+    init_helper();
     getMeta = function(_0) {
       return __async(this, arguments, function* ({
         link,
@@ -492,10 +547,10 @@ var init_meta = __esm({
       }) {
         var _a, _b, _c, _d;
         const { axios, cheerio, commonHeaders, openWebView } = providerContext;
-        const baseUrl = yield getBaseUrl("1cinevood");
+        const baseUrl = yield getCinewoodBaseUrl();
         const url = new URL(link, `${baseUrl}/`).href;
         try {
-          const response = yield getWithWAF2(url, axios, openWebView, commonHeaders);
+          const response = yield getWithWAF(url, axios, openWebView, commonHeaders);
           const $ = cheerio.load(response.data);
           const infoContainer = $(".entry-content, .post-inner").first();
           const cleanText = (value) => value ? $("<div>").html(value).text().replace(/\s+/g, " ").trim() : "";
@@ -598,21 +653,24 @@ var init_meta = __esm({
             );
             return result;
           }
-          if (result.type === "series" && cinemeta.type === "series") {
-            result.linkList = result.linkList.map((item) => {
-              if (!item.episodesLink) return item;
-              const season = getCinemetaSeason(item.title);
-              if (!season) return item;
-              return __spreadProps(__spreadValues({}, item), {
-                episodesLink: addCinemetaContext(
-                  new URL(item.episodesLink, url).href,
-                  imdbId,
-                  season
-                )
+          if (cinemeta) {
+            if (result.type === "series" && cinemeta.type === "series") {
+              result.linkList = result.linkList.map((item) => {
+                if (!item.episodesLink) return item;
+                const season = getCinemetaSeason(item.title);
+                if (!season) return item;
+                return __spreadProps(__spreadValues({}, item), {
+                  episodesLink: addCinemetaContext(
+                    new URL(item.episodesLink, url).href,
+                    imdbId,
+                    season
+                  )
+                });
               });
-            });
+            }
+            return applyCinemetaMeta(result, cinemeta);
           }
-          return applyCinemetaMeta(result, cinemeta);
+          return result;
         } catch (err) {
           throwProviderError("1CineVood", "metadata", err);
         }
@@ -779,48 +837,6 @@ var init_gofile = __esm({
 });
 
 // providers/extractors/hubcloud.ts
-function checkStreamHealth(stream, signal) {
-  return __async(this, null, function* () {
-    if (!(stream == null ? void 0 : stream.link)) return false;
-    const reqHeaders = __spreadValues({
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
-    }, stream.headers || {});
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4e3);
-      if (signal) {
-        signal.addEventListener("abort", () => controller.abort(), { once: true });
-      }
-      const res = yield fetch(stream.link, {
-        method: "HEAD",
-        headers: reqHeaders,
-        signal: controller.signal,
-        redirect: "follow"
-      });
-      clearTimeout(timeoutId);
-      if (res.status >= 200 && res.status < 400) {
-        return true;
-      }
-      if (res.status === 405 || res.status === 403) {
-        const getController = new AbortController();
-        const getTimeoutId = setTimeout(() => getController.abort(), 4e3);
-        if (signal) {
-          signal.addEventListener("abort", () => getController.abort(), { once: true });
-        }
-        const getRes = yield fetch(stream.link, {
-          method: "GET",
-          headers: __spreadProps(__spreadValues({}, reqHeaders), { Range: "bytes=0-0" }),
-          signal: getController.signal
-        });
-        clearTimeout(getTimeoutId);
-        return getRes.status >= 200 && getRes.status < 400;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  });
-}
 function resolveGofileLink(gofileLink, axios, providerContext) {
   return __async(this, null, function* () {
     try {
@@ -846,7 +862,7 @@ function resolveGofileLink(gofileLink, axios, providerContext) {
 }
 function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContext, isDownload, providerValue) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
       if (!headers["Cookie"]) {
         headers["Cookie"] = "ext_name=ojplmecpdpgccookcobabopnaifgidhf; xla=s4t; cf_clearance=woQrFGXtLfmEMBEiGUsVHrUBMT8s3cmguIzmMjmvpkg-1770053679-1.2.1.1-xBrQdciOJsweUF6F2T_OtH6jmyanN_TduQ0yslc_XqjU6RcHSxI7.YOKv6ry7oYo64868HYoULnVyww536H2eVI3R2e4wKzsky6abjPdfQPxqpUaXjxfJ02o6jl3_Vkwr4uiaU7Wy596Vdst3y78HXvVmKdIohhtPvp.vZ9_L7wvWdce0GRixjh_6JiqWmWMws46hwEt3hboaS1e1e4EoWCvj5b0M_jVwvSxBOAW5emFzvT3QrnRh4nyYmKDERnY";
@@ -865,11 +881,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
               `hubcloudExtractor: WAF detected (403) for ${link}, using solver...`
             );
             const cleanHeaders = __spreadProps(__spreadValues({}, headers), { Referer: baseUrl });
-            delete cleanHeaders["User-Agent"];
-            delete cleanHeaders["sec-ch-ua"];
-            delete cleanHeaders["sec-ch-ua-mobile"];
-            delete cleanHeaders["sec-ch-ua-platform"];
-            delete cleanHeaders["Cookie"];
             const wafResult = yield openWebView(baseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -926,11 +937,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
             );
             const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
             const cleanHeaders2 = __spreadProps(__spreadValues({}, headers), { Referer: vcloudBaseUrl });
-            delete cleanHeaders2["User-Agent"];
-            delete cleanHeaders2["sec-ch-ua"];
-            delete cleanHeaders2["sec-ch-ua-mobile"];
-            delete cleanHeaders2["sec-ch-ua-platform"];
-            delete cleanHeaders2["Cookie"];
             const wafResult = yield openWebView(vcloudBaseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -943,48 +949,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
             const retryRes = yield axios.get(vcloudLink, { headers, signal });
             vcloudText = retryRes.data;
           } else {
-            if (((_c = error.response) == null ? void 0 : _c.status) === 403 && !openWebView) {
-              console.log(
-                `hubcloudExtractor: 403 Forbidden for ${vcloudLink}, but openWebView solver is not available!`
-              );
-            }
-            let fetchRes = yield fetch(vcloudLink, {
-              headers,
-              signal,
-              redirect: "follow"
-            });
-            if (fetchRes.status === 403 && openWebView) {
-              console.log(
-                `hubcloudExtractor: WAF detected (403) for ${vcloudLink}, using solver...`
-              );
-              const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
-              const cleanHeaders3 = __spreadProps(__spreadValues({}, headers), { Referer: vcloudBaseUrl });
-              delete cleanHeaders3["User-Agent"];
-              delete cleanHeaders3["sec-ch-ua"];
-              delete cleanHeaders3["sec-ch-ua-mobile"];
-              delete cleanHeaders3["sec-ch-ua-platform"];
-              delete cleanHeaders3["Cookie"];
-              const wafResult = yield openWebView(vcloudBaseUrl, {
-                title: "Solve the captcha below and click done",
-                description: "Required to bypass anti-bot protection.",
-                headers: cleanHeaders3,
-                waitForCookie: "cf_clearance",
-                force: true
-              });
-              if (wafResult.userAgent) headers["User-Agent"] = wafResult.userAgent;
-              headers["Cookie"] = (headers["Cookie"] ? headers["Cookie"] + "; " : "") + wafResult.cookies;
-              fetchRes = yield fetch(vcloudLink, {
-                headers,
-                signal,
-                redirect: "follow"
-              });
-            }
-            if (!fetchRes.ok) {
-              throw new Error(
-                `HTTP ${fetchRes.status} ${fetchRes.statusText} | URL ${vcloudLink}`
-              );
-            }
-            vcloudText = yield fetchRes.text();
+            throw error;
           }
         }
       }
@@ -1008,7 +973,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
                 );
                 link2 = redirectedPixelDrainUrl;
               }
-              const token = (_d = link2.split("/").pop()) == null ? void 0 : _d.split("?")[0];
+              const token = (_c = link2.split("/").pop()) == null ? void 0 : _c.split("?")[0];
               const baseUrl2 = link2.split("/").slice(0, -2).join("/");
               link2 = `${baseUrl2}/api/file/${token}?download`;
             }
@@ -1019,36 +984,52 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
             break;
           case ((link2 == null ? void 0 : link2.includes("hubcloud")) || (link2 == null ? void 0 : link2.includes("/?id="))):
             try {
-              const newLinkRes = yield fetch(link2, {
-                method: "HEAD",
-                headers,
-                signal,
-                redirect: "manual"
-              });
               let newLink = link2;
-              if (newLinkRes.status >= 300 && newLinkRes.status < 400) {
-                newLink = newLinkRes.headers.get("location") || link2;
-              } else if (newLinkRes.url && newLinkRes.url !== link2) {
-                newLink = newLinkRes.url;
-              } else {
-                newLink = newLinkRes.headers.get("location") || link2;
-              }
-              if (newLink.includes("googleusercontent")) {
-                newLink = newLink.split("?link=")[1];
-              } else {
-                const newLinkRes2 = yield fetch(newLink, {
-                  method: "HEAD",
-                  headers,
-                  signal,
-                  redirect: "manual"
-                });
-                if (newLinkRes2.status >= 300 && newLinkRes2.status < 400) {
-                  newLink = ((_e = newLinkRes2.headers.get("location")) == null ? void 0 : _e.split("?link=")[1]) || newLink;
-                } else if (newLinkRes2.url && newLinkRes2.url !== newLink) {
-                  newLink = newLinkRes2.url.split("?link=")[1] || newLinkRes2.url;
-                } else {
-                  newLink = ((_f = newLinkRes2.headers.get("location")) == null ? void 0 : _f.split("?link=")[1]) || newLink;
+              try {
+                if (typeof fetch !== "undefined") {
+                  const fRes = yield fetch(link2, {
+                    headers,
+                    signal,
+                    redirect: "follow"
+                  });
+                  if (fRes.url && fRes.url.includes("googleusercontent")) {
+                    newLink = fRes.url.split("?link=")[1] || fRes.url;
+                  } else if (fRes.url && fRes.url !== link2) {
+                    newLink = fRes.url;
+                  }
                 }
+              } catch (e) {
+              }
+              if (!newLink.includes("googleusercontent")) {
+                try {
+                  const res1 = yield axios.get(newLink, {
+                    headers,
+                    signal,
+                    maxRedirects: 0,
+                    validateStatus: (s) => s >= 200 && s < 400
+                  });
+                  if ((_d = res1.headers) == null ? void 0 : _d["location"]) {
+                    newLink = res1.headers["location"];
+                  }
+                  if (newLink.includes("googleusercontent")) {
+                    newLink = newLink.split("?link=")[1] || newLink;
+                  } else if (newLink.includes("http")) {
+                    const res2 = yield axios.get(newLink, {
+                      headers,
+                      signal,
+                      maxRedirects: 0,
+                      validateStatus: (s) => s >= 200 && s < 400
+                    });
+                    if ((_e = res2.headers) == null ? void 0 : _e["location"]) {
+                      const loc2 = res2.headers["location"];
+                      newLink = loc2.includes("?link=") ? loc2.split("?link=")[1] : loc2;
+                    }
+                  }
+                } catch (e) {
+                }
+              }
+              if (newLink.includes("?link=")) {
+                newLink = newLink.split("?link=")[1] || newLink;
               }
               streamLinks.push({
                 server: "GDrive (download only)",
@@ -1093,7 +1074,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
       let preferredServer = "auto";
       try {
         const specificKey = providerValue ? `${providerValue}_preferredDownloadServer` : "";
-        preferredServer = ((specificKey ? yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get(specificKey) : void 0) || (yield (_h = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _h.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
+        preferredServer = ((specificKey ? yield (_f = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _f.get(specificKey) : void 0) || (yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
       } catch (e) {
       }
       const getPriority = (serverName = "") => {
@@ -1102,49 +1083,26 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
           return 0;
         }
         if (isDownload) {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage") || s.includes("resumable")) return 2;
-          if (s.includes("gdrive") || s.includes("instant")) return 3;
+          if (s.includes("cf storage") || s.includes("storage") || s.includes("resumable")) return 1;
+          if (s.includes("gdrive") || s.includes("google") || s.includes("instant")) return 2;
+          if (s.includes("pixeldrain")) return 3;
           if (s.includes("gofile")) return 4;
-          if (s.includes("pixeldrain")) return 5;
-          if (s.includes("fastdl")) return 6;
-          if (s.includes("hubcdn")) return 7;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
+          if (s.includes("hubcdn")) return 6;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 8;
           return 10;
         } else {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage")) return 2;
+          if (s.includes("cf storage") || s.includes("storage")) return 1;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 2;
           if (s.includes("gofile")) return 3;
           if (s.includes("pixeldrain")) return 4;
-          if (s.includes("fastdl")) return 5;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
           if (s.includes("hubcdn")) return 6;
-          if (s.includes("gdrive")) return 7;
+          if (s.includes("gdrive") || s.includes("google")) return 7;
           return 10;
         }
       };
       streamLinks.sort((a, b) => getPriority(a.server) - getPriority(b.server));
-      if (isDownload && streamLinks.length > 0) {
-        const isTopHealthy = yield checkStreamHealth(
-          streamLinks[0],
-          signal
-        );
-        if (!isTopHealthy) {
-          let healthyIndex = -1;
-          for (let i = 1; i < streamLinks.length; i++) {
-            const isHealthy = yield checkStreamHealth(
-              streamLinks[i],
-              signal
-            );
-            if (isHealthy) {
-              healthyIndex = i;
-              break;
-            }
-          }
-          if (healthyIndex > 0) {
-            const [workingStream] = streamLinks.splice(healthyIndex, 1);
-            streamLinks.unshift(workingStream);
-          }
-        }
-      }
       console.log("streamLinks", streamLinks);
       return streamLinks;
     } catch (error) {
@@ -1207,6 +1165,7 @@ function getStream(_0) {
     providerContext,
     isDownload
   }) {
+    var _a, _b, _c;
     const { axios, cheerio, commonHeaders } = providerContext;
     try {
       let processLink = link;
@@ -1215,13 +1174,27 @@ function getStream(_0) {
           const urlObj = new URL(processLink);
           const id = processLink.split("/").filter(Boolean).pop();
           const apiUrl = `${urlObj.origin}/api/s/${id}/hubcloud`;
-          const res = yield fetch(apiUrl, {
-            headers: commonHeaders,
-            redirect: "follow",
-            signal
-          });
-          if (res.url && res.url.includes("hubcloud")) {
-            processLink = res.url;
+          try {
+            const apiRes = yield axios.get(apiUrl, {
+              headers: commonHeaders,
+              maxRedirects: 5,
+              signal
+            });
+            const finalUrl = ((_b = (_a = apiRes.request) == null ? void 0 : _a.res) == null ? void 0 : _b.responseUrl) || ((_c = apiRes.config) == null ? void 0 : _c.url);
+            if (finalUrl && finalUrl.includes("hubcloud")) {
+              processLink = finalUrl;
+            } else if (apiRes.data && typeof apiRes.data === "object" && apiRes.data.link) {
+              processLink = apiRes.data.link;
+            }
+          } catch (e) {
+            const res = yield fetch(apiUrl, {
+              headers: commonHeaders,
+              redirect: "follow",
+              signal
+            });
+            if (res.url && res.url.includes("hubcloud")) {
+              processLink = res.url;
+            }
           }
         } catch (e) {
           console.log("Error resolving oxxfile link", e);
@@ -1405,40 +1378,13 @@ var episodes_exports = {};
 __export(episodes_exports, {
   getEpisodes: () => getEpisodes
 });
-function getWithWAF3(url, axios, openWebView, headers) {
-  return __async(this, null, function* () {
-    var _a;
-    const baseUrl = url.split("/").slice(0, 3).join("/");
-    try {
-      return yield axios.get(url, { headers: __spreadProps(__spreadValues({}, headers), { Referer: baseUrl }) });
-    } catch (error) {
-      if (((_a = error.response) == null ? void 0 : _a.status) === 403 && openWebView) {
-        console.log(`WAF detected (403) for ${url}, using solver...`);
-        const wafResult = yield openWebView(baseUrl, {
-          title: "Solve the captcha below and click done",
-          description: "Required to bypass anti-bot protection.",
-          headers: __spreadProps(__spreadValues({}, headers), { Referer: baseUrl }),
-          waitForCookie: "cf_clearance",
-          force: true
-        });
-        return yield axios.get(url, {
-          headers: __spreadProps(__spreadValues({}, headers), {
-            Referer: baseUrl,
-            "User-Agent": wafResult.userAgent || headers["User-Agent"],
-            Cookie: wafResult.cookies || wafResult.cookie
-          })
-        });
-      }
-      throw error;
-    }
-  });
-}
 var formatEpisodeTitle, getEpisodes;
 var init_episodes = __esm({
   "providers/1cinevood/episodes.ts"() {
     "use strict";
     init_getCinemetaMeta();
     init_theintrodb();
+    init_helper();
     formatEpisodeTitle = (fileName) => {
       try {
         const match = fileName.match(/S(\d+)E(\d+)/i);
@@ -1457,7 +1403,7 @@ var init_episodes = __esm({
         url,
         providerContext
       }) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c;
         const {
           axios,
           cheerio,
@@ -1476,45 +1422,63 @@ var init_episodes = __esm({
           const enrich = (episodes2) => __async(null, null, function* () {
             var _a2;
             if (!context.imdbId || !context.season) return episodes2;
-            const cinemeta = yield getCinemetaMeta(
-              context.imdbId,
-              "series",
-              providerContext
-            );
-            let enriched = enrichCinemetaEpisodes(
-              episodes2,
-              cinemeta.videos || [],
-              context.season
-            );
-            const skipTimings = yield (_a2 = providerContext.kvStore) == null ? void 0 : _a2.get("1cinevood_skipTimings");
-            if (skipTimings != null ? skipTimings : true) {
-              enriched = yield enrichEpisodesWithSkipTimings(
-                enriched,
+            let enriched = episodes2;
+            try {
+              const cinemeta = yield getCinemetaMeta(
                 context.imdbId,
-                context.season,
+                "series",
                 providerContext
               );
+              if (cinemeta) {
+                enriched = enrichCinemetaEpisodes(
+                  episodes2,
+                  cinemeta.videos || [],
+                  context.season
+                );
+              }
+            } catch (e) {
+              console.warn("1CineVood: Cinemeta episode lookup failed", e);
+            }
+            const skipTimings = yield (_a2 = providerContext.kvStore) == null ? void 0 : _a2.get("1cinevood_skipTimings");
+            if (skipTimings != null ? skipTimings : true) {
+              try {
+                enriched = yield enrichEpisodesWithSkipTimings(
+                  enriched,
+                  context.imdbId,
+                  context.season,
+                  providerContext
+                );
+              } catch (e) {
+                console.warn("1CineVood: Skip timings lookup failed", e);
+              }
             }
             return enriched;
           });
           let res;
           try {
-            res = yield getWithWAF3(apiUrl, axios, openWebView, headers);
+            res = yield getWithWAF(apiUrl, axios, openWebView, headers);
           } catch (error) {
             if (((_a = error.response) == null ? void 0 : _a.status) === 404) {
               const alternativeUrl = `${baseUrl}/api/s/${id}/`;
               console.log("Trying alternative URL:", alternativeUrl);
-              const altRes = yield getWithWAF3(
+              const altRes = yield getWithWAF(
                 alternativeUrl,
                 axios,
                 openWebView,
                 headers
               );
-              if ((_b = altRes.data) == null ? void 0 : _b.hasHubcloud) {
+              let altData = altRes == null ? void 0 : altRes.data;
+              if (typeof altData === "string") {
+                try {
+                  altData = JSON.parse(altData.replace(/<[^>]+>/g, "").trim());
+                } catch (e) {
+                }
+              }
+              if (altData == null ? void 0 : altData.hasHubcloud) {
                 const hubcloudUrl = `${baseUrl}/api/s/${id}/hubcloud`;
                 return enrich([
                   {
-                    title: formatEpisodeTitle(altRes.data.fileName || "Movie"),
+                    title: formatEpisodeTitle(altData.fileName || "Movie"),
                     link: hubcloudUrl
                   }
                 ]);
@@ -1524,7 +1488,14 @@ var init_episodes = __esm({
             throw error;
           }
           const episodes = [];
-          const items = ((_d = (_c = res.data) == null ? void 0 : _c.pack) == null ? void 0 : _d.items) || [];
+          let packData = res == null ? void 0 : res.data;
+          if (typeof packData === "string") {
+            try {
+              packData = JSON.parse(packData.replace(/<[^>]+>/g, "").trim());
+            } catch (e) {
+            }
+          }
+          const items = ((_b = packData == null ? void 0 : packData.pack) == null ? void 0 : _b.items) || [];
           for (const item of items) {
             if (item.file_name && item.hubcloud_link) {
               episodes.push({
@@ -1533,7 +1504,7 @@ var init_episodes = __esm({
               });
             }
           }
-          const quickDownload = yield (_e = providerContext.kvStore) == null ? void 0 : _e.get("1cinevood_quickDownload");
+          const quickDownload = yield (_c = providerContext.kvStore) == null ? void 0 : _c.get("1cinevood_quickDownload");
           const enrichedEpisodes = yield enrich(episodes);
           return enrichedEpisodes.map((e) => __spreadProps(__spreadValues({}, e), {
             quickDownload: quickDownload != null ? quickDownload : true

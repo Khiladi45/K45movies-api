@@ -1,5 +1,5 @@
 const urlsEndpoint =
-  "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+  "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
 const cacheTtl = 60 * 60 * 1000;
 
 type ProviderUrls = Record<string, { url: string }>;

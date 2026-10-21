@@ -16,10 +16,22 @@ export const getMeta = async function ({
   providerContext: ProviderContext;
 }): Promise<Info> {
   try {
-    const { axios, cheerio } = providerContext;
+    const { axios, cheerio, commonHeaders } = providerContext;
     const baseUrl = await getBaseUrl("Topmovies");
     const url = new URL(link, `${baseUrl}/`).href;
-    const res = await axios.get(url);
+    let res: any;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      try {
+        res = await axios.get(url, { headers: commonHeaders });
+        break;
+      } catch (err: any) {
+        if ((err.code === "ECONNRESET" || err.message?.includes("ECONNRESET")) && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 400));
+          continue;
+        }
+        throw err;
+      }
+    }
     const data = res.data;
     const $ = cheerio.load(data);
     const meta: Info = {
@@ -70,24 +82,31 @@ export const getMeta = async function ({
     meta.linkList = links;
     if (!imdbId) return meta;
 
-    const cinemeta = await getCinemetaMeta(imdbId, meta.type, providerContext);
-    if (meta.type === "series" && cinemeta.type === "series") {
-      meta.linkList = meta.linkList.map((item) => {
-        if (!item.episodesLink) return item;
-        const season =
-          getCinemetaSeason(item.title) || getCinemetaSeason(meta.title);
-        if (!season) return item;
-        return {
-          ...item,
-          episodesLink: addCinemetaContext(
-            new URL(item.episodesLink, url).href,
-            imdbId,
-            season,
-          ),
-        };
-      });
+    try {
+      const cinemeta = await getCinemetaMeta(imdbId, meta.type, providerContext);
+      if (cinemeta) {
+        if (meta.type === "series" && cinemeta.type === "series") {
+          meta.linkList = meta.linkList.map((item) => {
+            if (!item.episodesLink) return item;
+            const season =
+              getCinemetaSeason(item.title) || getCinemetaSeason(meta.title);
+            if (!season) return item;
+            return {
+              ...item,
+              episodesLink: addCinemetaContext(
+                new URL(item.episodesLink, url).href,
+                imdbId,
+                season,
+              ),
+            };
+          });
+        }
+        return applyCinemetaMeta(meta, cinemeta);
+      }
+    } catch (e) {
+      console.warn("TopMovies: Cinemeta lookup failed", e);
     }
-    return applyCinemetaMeta(meta, cinemeta);
+    return meta;
   } catch (err) {
     throwProviderError("TopMovies", "metadata", err);
   }

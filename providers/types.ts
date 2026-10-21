@@ -13,6 +13,10 @@ export interface Post {
   link: string;
   image: string;
   provider?: string;
+  aspectRatio?: number | string;
+  borderRadius?: number;
+  tag?: string;
+  cornerTag?: string;
 }
 
 export type TextTracks = {
@@ -33,7 +37,9 @@ export interface Stream {
   server: string;
   link: string;
   type: string;
-  quality?: "360" | "480" | "720" | "1080" | "2160";
+  quality?: "360" | "480" | "720" | "1080" | "2160" | string;
+  tag?: string;
+  tags?: string[];
   subtitles?: TextTracks;
   headers?: any;
   skip?: SkipInterval[];
@@ -88,10 +94,14 @@ export interface Catalog {
   filter: string;
 }
 
+export type CatalogList =
+  | Catalog[]
+  | ((params?: { signal?: AbortSignal; providerContext?: ProviderContext }) => Promise<Catalog[]> | Catalog[]);
+
 export interface ProviderType {
   searchFilter?: string;
-  catalog: Catalog[];
-  genres: Catalog[];
+  catalog: CatalogList;
+  genres: CatalogList;
   blurImage?: boolean;
   nonStreamableServer?: string[];
   nonDownloadableServer?: string[];
@@ -167,6 +177,10 @@ export interface OpenWebViewOptions {
   force?: boolean;
   // If set, the dialog auto-cancels (rejects) after this many milliseconds.
   timeoutMs?: number;
+
+  // Custom JavaScript injected into the WebView. Can communicate back via:
+  // window.ReactNativeWebView.postMessage(JSON.stringify({ __waf: true, data: ... }))
+  injectedJavaScript?: string;
 }
 
 // Result returned to the provider after the user solves the challenge.
@@ -244,4 +258,6 @@ export type ProviderContext = {
     options?: OpenWebViewOptions,
   ) => Promise<OpenWebViewResult>;
   kvStore: ProviderKvStore;
+  /** Existing cookies for this source author and URL; does not open a browser. */
+  getCookies?: (url: string) => Promise<Record<string, string>>;
 };

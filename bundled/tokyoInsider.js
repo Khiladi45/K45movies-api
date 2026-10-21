@@ -127,7 +127,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue) => __async(null, null, function* () {
       var _a, _b;

@@ -5,38 +5,7 @@ import {
   readCinemetaContext,
 } from "../getCinemetaMeta";
 import { enrichEpisodesWithSkipTimings } from "../theintrodb";
-
-async function getWithWAF(
-  url: string,
-  axios: any,
-  openWebView: any,
-  headers: any,
-): Promise<any> {
-  const baseUrl = url.split("/").slice(0, 3).join("/");
-  try {
-    return await axios.get(url, { headers: { ...headers, Referer: baseUrl } });
-  } catch (error: any) {
-    if (error.response?.status === 403 && openWebView) {
-      console.log(`WAF detected (403) for ${url}, using solver...`);
-      const wafResult = await openWebView(baseUrl, {
-        title: "Solve the captcha below and click done",
-        description: "Required to bypass anti-bot protection.",
-        headers: { ...headers, Referer: baseUrl },
-        waitForCookie: "cf_clearance",
-        force: true,
-      });
-      return await axios.get(url, {
-        headers: {
-          ...headers,
-          Referer: baseUrl,
-          "User-Agent": wafResult.userAgent || headers["User-Agent"],
-          Cookie: wafResult.cookies || wafResult.cookie,
-        },
-      });
-    }
-    throw error;
-  }
-}
+import { getWithWAF } from "./helper";
 
 const formatEpisodeTitle = (fileName: string): string => {
   try {
@@ -78,24 +47,36 @@ export const getEpisodes = async function ({
 
     const enrich = async (episodes: EpisodeLink[]): Promise<EpisodeLink[]> => {
       if (!context.imdbId || !context.season) return episodes;
-      const cinemeta = await getCinemetaMeta(
-        context.imdbId,
-        "series",
-        providerContext,
-      );
-      let enriched = enrichCinemetaEpisodes(
-        episodes,
-        cinemeta.videos || [],
-        context.season,
-      );
-      const skipTimings = await providerContext.kvStore?.get<boolean>("1cinevood_skipTimings");
-      if (skipTimings ?? true) {
-        enriched = await enrichEpisodesWithSkipTimings(
-          enriched,
+      let enriched = episodes;
+      try {
+        const cinemeta = await getCinemetaMeta(
           context.imdbId,
-          context.season,
+          "series",
           providerContext,
         );
+        if (cinemeta) {
+          enriched = enrichCinemetaEpisodes(
+            episodes,
+            cinemeta.videos || [],
+            context.season,
+          );
+        }
+      } catch (e) {
+        console.warn("1CineVood: Cinemeta episode lookup failed", e);
+      }
+
+      const skipTimings = await providerContext.kvStore?.get<boolean>("1cinevood_skipTimings");
+      if (skipTimings ?? true) {
+        try {
+          enriched = await enrichEpisodesWithSkipTimings(
+            enriched,
+            context.imdbId,
+            context.season,
+            providerContext,
+          );
+        } catch (e) {
+          console.warn("1CineVood: Skip timings lookup failed", e);
+        }
       }
       return enriched;
     };
@@ -116,12 +97,19 @@ export const getEpisodes = async function ({
           headers,
         );
 
+        let altData = altRes?.data;
+        if (typeof altData === "string") {
+          try {
+            altData = JSON.parse(altData.replace(/<[^>]+>/g, "").trim());
+          } catch {}
+        }
+
         // Check if hubcloud is available
-        if (altRes.data?.hasHubcloud) {
+        if (altData?.hasHubcloud) {
           const hubcloudUrl = `${baseUrl}/api/s/${id}/hubcloud`;
           return enrich([
             {
-              title: formatEpisodeTitle(altRes.data.fileName || "Movie"),
+              title: formatEpisodeTitle(altData.fileName || "Movie"),
               link: hubcloudUrl,
             },
           ]);
@@ -134,7 +122,14 @@ export const getEpisodes = async function ({
 
     const episodes: EpisodeLink[] = [];
 
-    const items = res.data?.pack?.items || [];
+    let packData = res?.data;
+    if (typeof packData === "string") {
+      try {
+        packData = JSON.parse(packData.replace(/<[^>]+>/g, "").trim());
+      } catch {}
+    }
+
+    const items = packData?.pack?.items || [];
 
     for (const item of items) {
       if (item.file_name && item.hubcloud_link) {

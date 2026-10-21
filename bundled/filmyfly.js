@@ -131,7 +131,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue) => __async(null, null, function* () {
       var _a, _b;
@@ -319,7 +319,7 @@ var init_meta = __esm({
 // providers/extractors/gdflix.ts
 function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
       let wafCookies;
       try {
@@ -343,7 +343,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext)
       if (wafCookies) {
         headers["Cookie"] = wafCookies;
       }
-      const streamLinks = [];
+      const streamLinks2 = [];
       const res = yield axios(`${link}`, { headers, signal });
       console.log("gdflixExtractor", link);
       const data = res.data;
@@ -384,7 +384,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext)
           );
           const resumeBotDownloadData = yield resumeBotDownload.json();
           console.log("resumeBotDownloadData", resumeBotDownloadData.url);
-          streamLinks.push({
+          streamLinks2.push({
             server: "ResumeBot",
             link: resumeBotDownloadData.url,
             type: "mkv"
@@ -396,7 +396,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext)
           const $resumeDrive = cheerio.load(resumeDriveHtml);
           const resumeLink = $resumeDrive(".btn-success").attr("href");
           if (resumeLink) {
-            streamLinks.push({
+            streamLinks2.push({
               server: "ResumeCloud",
               link: resumeLink,
               type: "mkv"
@@ -408,49 +408,67 @@ function gdflixExtractor(link, signal, axios, cheerio, headers, providerContext)
       }
       try {
         const seed = $drive(".btn-danger").attr("href") || "";
-        console.log("seed", seed);
-        if (!seed.includes("?url=")) {
-          const newLinkRes = yield axios.head(seed, { headers, signal });
-          console.log("newLinkRes", (_f = newLinkRes.request) == null ? void 0 : _f.responseURL);
-          const newLink = ((_i = (_h = (_g = newLinkRes.request) == null ? void 0 : _g.responseURL) == null ? void 0 : _h.split("?url=")) == null ? void 0 : _i[1]) || seed;
-          streamLinks.push({ server: "G-Drive", link: newLink, type: "mkv" });
-        } else {
-          const instantToken = seed.split("=")[1];
-          const InstantFromData = new FormData();
-          InstantFromData.append("keys", instantToken);
-          const videoSeedUrl = seed.split("/").slice(0, 3).join("/") + "/api";
-          const instantLinkRes = yield fetch(videoSeedUrl, {
-            method: "POST",
-            body: InstantFromData,
-            headers: {
-              "x-token": videoSeedUrl
+        if (seed && seed.startsWith("http")) {
+          if (seed.includes("url=")) {
+            const directPart = decodeURIComponent(seed.split("url=")[1]);
+            if (directPart && directPart.startsWith("http")) {
+              streamLinks2.push({ server: "Instant Download", link: directPart, type: "mkv" });
             }
-          });
-          const instantLinkData = yield instantLinkRes.json();
-          if (instantLinkData.error === false) {
-            const instantLink = instantLinkData.url;
-            streamLinks.push({
-              server: "G-Drive (download only)",
-              link: instantLink,
-              type: "mkv"
+          }
+          try {
+            const vRes = yield axios.get(seed, {
+              headers: __spreadProps(__spreadValues({}, headers), { Referer: link }),
+              maxRedirects: 0,
+              validateStatus: (s) => s >= 200 && s < 400,
+              signal
             });
-          } else {
-            console.log("Instant link not found", instantLinkData);
+            const loc = (_f = vRes.headers) == null ? void 0 : _f.location;
+            if (loc) {
+              let directGoogleUrl = null;
+              if (loc.includes("url=")) {
+                directGoogleUrl = decodeURIComponent(loc.split("url=")[1]);
+              } else if (loc.includes("googleusercontent.com") || loc.startsWith("http")) {
+                directGoogleUrl = loc;
+              }
+              if (directGoogleUrl && directGoogleUrl.startsWith("http")) {
+                streamLinks2.push({ server: "Instant Download", link: directGoogleUrl, type: "mkv" });
+              }
+            } else if (typeof vRes.data === "string") {
+              const upMatch = vRes.data.match(/window\.location\.href\s*=\s*["']([^"']+)["']/);
+              if (upMatch) {
+                const upPath = upMatch[1];
+                const vOrigin = new URL(seed).origin;
+                const upUrl = upPath.startsWith("http") ? upPath : vOrigin + upPath;
+                const upRes = yield axios.get(upUrl, {
+                  headers: __spreadProps(__spreadValues({}, headers), { Referer: seed }),
+                  signal
+                });
+                const loc2 = (_g = upRes.headers) == null ? void 0 : _g.location;
+                if (loc2 && loc2.startsWith("http")) {
+                  streamLinks2.push({ server: "Instant Download", link: loc2, type: "mkv" });
+                } else if (typeof upRes.data === "string") {
+                  const $up = cheerio.load(upRes.data);
+                  const dlBtn = $up("#downloadBtn, a.btn-danger, a.btn-success").attr("href");
+                  if (dlBtn && dlBtn.startsWith("http")) {
+                    streamLinks2.push({ server: "Instant Download", link: dlBtn, type: "mkv" });
+                  }
+                }
+              }
+            }
+          } catch (e) {
           }
         }
-      } catch (err) {
-        console.log("Instant link not found", err);
+      } catch (e) {
       }
-      return streamLinks;
+      return streamLinks2;
     } catch (error) {
-      throwProviderError("GDFlix", `extract ${link}`, error);
+      return streamLinks;
     }
   });
 }
 var init_gdflix = __esm({
   "providers/extractors/gdflix.ts"() {
     "use strict";
-    init_providerErrors();
   }
 });
 

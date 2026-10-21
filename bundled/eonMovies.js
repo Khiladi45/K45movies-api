@@ -125,7 +125,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue3) => __async(null, null, function* () {
       var _a, _b;
@@ -473,48 +473,6 @@ var init_gofile = __esm({
 });
 
 // providers/extractors/hubcloud.ts
-function checkStreamHealth(stream, signal) {
-  return __async(this, null, function* () {
-    if (!(stream == null ? void 0 : stream.link)) return false;
-    const reqHeaders = __spreadValues({
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
-    }, stream.headers || {});
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4e3);
-      if (signal) {
-        signal.addEventListener("abort", () => controller.abort(), { once: true });
-      }
-      const res = yield fetch(stream.link, {
-        method: "HEAD",
-        headers: reqHeaders,
-        signal: controller.signal,
-        redirect: "follow"
-      });
-      clearTimeout(timeoutId);
-      if (res.status >= 200 && res.status < 400) {
-        return true;
-      }
-      if (res.status === 405 || res.status === 403) {
-        const getController = new AbortController();
-        const getTimeoutId = setTimeout(() => getController.abort(), 4e3);
-        if (signal) {
-          signal.addEventListener("abort", () => getController.abort(), { once: true });
-        }
-        const getRes = yield fetch(stream.link, {
-          method: "GET",
-          headers: __spreadProps(__spreadValues({}, reqHeaders), { Range: "bytes=0-0" }),
-          signal: getController.signal
-        });
-        clearTimeout(getTimeoutId);
-        return getRes.status >= 200 && getRes.status < 400;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  });
-}
 function resolveGofileLink(gofileLink, axios, providerContext) {
   return __async(this, null, function* () {
     try {
@@ -540,7 +498,7 @@ function resolveGofileLink(gofileLink, axios, providerContext) {
 }
 function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContext, isDownload, providerValue3) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
       if (!headers["Cookie"]) {
         headers["Cookie"] = "ext_name=ojplmecpdpgccookcobabopnaifgidhf; xla=s4t; cf_clearance=woQrFGXtLfmEMBEiGUsVHrUBMT8s3cmguIzmMjmvpkg-1770053679-1.2.1.1-xBrQdciOJsweUF6F2T_OtH6jmyanN_TduQ0yslc_XqjU6RcHSxI7.YOKv6ry7oYo64868HYoULnVyww536H2eVI3R2e4wKzsky6abjPdfQPxqpUaXjxfJ02o6jl3_Vkwr4uiaU7Wy596Vdst3y78HXvVmKdIohhtPvp.vZ9_L7wvWdce0GRixjh_6JiqWmWMws46hwEt3hboaS1e1e4EoWCvj5b0M_jVwvSxBOAW5emFzvT3QrnRh4nyYmKDERnY";
@@ -559,11 +517,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
               `hubcloudExtractor: WAF detected (403) for ${link}, using solver...`
             );
             const cleanHeaders = __spreadProps(__spreadValues({}, headers), { Referer: baseUrl });
-            delete cleanHeaders["User-Agent"];
-            delete cleanHeaders["sec-ch-ua"];
-            delete cleanHeaders["sec-ch-ua-mobile"];
-            delete cleanHeaders["sec-ch-ua-platform"];
-            delete cleanHeaders["Cookie"];
             const wafResult = yield openWebView(baseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -620,11 +573,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
             );
             const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
             const cleanHeaders2 = __spreadProps(__spreadValues({}, headers), { Referer: vcloudBaseUrl });
-            delete cleanHeaders2["User-Agent"];
-            delete cleanHeaders2["sec-ch-ua"];
-            delete cleanHeaders2["sec-ch-ua-mobile"];
-            delete cleanHeaders2["sec-ch-ua-platform"];
-            delete cleanHeaders2["Cookie"];
             const wafResult = yield openWebView(vcloudBaseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -637,48 +585,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
             const retryRes = yield axios.get(vcloudLink, { headers, signal });
             vcloudText = retryRes.data;
           } else {
-            if (((_c = error.response) == null ? void 0 : _c.status) === 403 && !openWebView) {
-              console.log(
-                `hubcloudExtractor: 403 Forbidden for ${vcloudLink}, but openWebView solver is not available!`
-              );
-            }
-            let fetchRes = yield fetch(vcloudLink, {
-              headers,
-              signal,
-              redirect: "follow"
-            });
-            if (fetchRes.status === 403 && openWebView) {
-              console.log(
-                `hubcloudExtractor: WAF detected (403) for ${vcloudLink}, using solver...`
-              );
-              const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
-              const cleanHeaders3 = __spreadProps(__spreadValues({}, headers), { Referer: vcloudBaseUrl });
-              delete cleanHeaders3["User-Agent"];
-              delete cleanHeaders3["sec-ch-ua"];
-              delete cleanHeaders3["sec-ch-ua-mobile"];
-              delete cleanHeaders3["sec-ch-ua-platform"];
-              delete cleanHeaders3["Cookie"];
-              const wafResult = yield openWebView(vcloudBaseUrl, {
-                title: "Solve the captcha below and click done",
-                description: "Required to bypass anti-bot protection.",
-                headers: cleanHeaders3,
-                waitForCookie: "cf_clearance",
-                force: true
-              });
-              if (wafResult.userAgent) headers["User-Agent"] = wafResult.userAgent;
-              headers["Cookie"] = (headers["Cookie"] ? headers["Cookie"] + "; " : "") + wafResult.cookies;
-              fetchRes = yield fetch(vcloudLink, {
-                headers,
-                signal,
-                redirect: "follow"
-              });
-            }
-            if (!fetchRes.ok) {
-              throw new Error(
-                `HTTP ${fetchRes.status} ${fetchRes.statusText} | URL ${vcloudLink}`
-              );
-            }
-            vcloudText = yield fetchRes.text();
+            throw error;
           }
         }
       }
@@ -702,7 +609,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
                 );
                 link2 = redirectedPixelDrainUrl;
               }
-              const token = (_d = link2.split("/").pop()) == null ? void 0 : _d.split("?")[0];
+              const token = (_c = link2.split("/").pop()) == null ? void 0 : _c.split("?")[0];
               const baseUrl2 = link2.split("/").slice(0, -2).join("/");
               link2 = `${baseUrl2}/api/file/${token}?download`;
             }
@@ -713,36 +620,52 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
             break;
           case ((link2 == null ? void 0 : link2.includes("hubcloud")) || (link2 == null ? void 0 : link2.includes("/?id="))):
             try {
-              const newLinkRes = yield fetch(link2, {
-                method: "HEAD",
-                headers,
-                signal,
-                redirect: "manual"
-              });
               let newLink = link2;
-              if (newLinkRes.status >= 300 && newLinkRes.status < 400) {
-                newLink = newLinkRes.headers.get("location") || link2;
-              } else if (newLinkRes.url && newLinkRes.url !== link2) {
-                newLink = newLinkRes.url;
-              } else {
-                newLink = newLinkRes.headers.get("location") || link2;
-              }
-              if (newLink.includes("googleusercontent")) {
-                newLink = newLink.split("?link=")[1];
-              } else {
-                const newLinkRes2 = yield fetch(newLink, {
-                  method: "HEAD",
-                  headers,
-                  signal,
-                  redirect: "manual"
-                });
-                if (newLinkRes2.status >= 300 && newLinkRes2.status < 400) {
-                  newLink = ((_e = newLinkRes2.headers.get("location")) == null ? void 0 : _e.split("?link=")[1]) || newLink;
-                } else if (newLinkRes2.url && newLinkRes2.url !== newLink) {
-                  newLink = newLinkRes2.url.split("?link=")[1] || newLinkRes2.url;
-                } else {
-                  newLink = ((_f = newLinkRes2.headers.get("location")) == null ? void 0 : _f.split("?link=")[1]) || newLink;
+              try {
+                if (typeof fetch !== "undefined") {
+                  const fRes = yield fetch(link2, {
+                    headers,
+                    signal,
+                    redirect: "follow"
+                  });
+                  if (fRes.url && fRes.url.includes("googleusercontent")) {
+                    newLink = fRes.url.split("?link=")[1] || fRes.url;
+                  } else if (fRes.url && fRes.url !== link2) {
+                    newLink = fRes.url;
+                  }
                 }
+              } catch (e) {
+              }
+              if (!newLink.includes("googleusercontent")) {
+                try {
+                  const res1 = yield axios.get(newLink, {
+                    headers,
+                    signal,
+                    maxRedirects: 0,
+                    validateStatus: (s) => s >= 200 && s < 400
+                  });
+                  if ((_d = res1.headers) == null ? void 0 : _d["location"]) {
+                    newLink = res1.headers["location"];
+                  }
+                  if (newLink.includes("googleusercontent")) {
+                    newLink = newLink.split("?link=")[1] || newLink;
+                  } else if (newLink.includes("http")) {
+                    const res2 = yield axios.get(newLink, {
+                      headers,
+                      signal,
+                      maxRedirects: 0,
+                      validateStatus: (s) => s >= 200 && s < 400
+                    });
+                    if ((_e = res2.headers) == null ? void 0 : _e["location"]) {
+                      const loc2 = res2.headers["location"];
+                      newLink = loc2.includes("?link=") ? loc2.split("?link=")[1] : loc2;
+                    }
+                  }
+                } catch (e) {
+                }
+              }
+              if (newLink.includes("?link=")) {
+                newLink = newLink.split("?link=")[1] || newLink;
               }
               streamLinks.push({
                 server: "GDrive (download only)",
@@ -787,7 +710,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
       let preferredServer = "auto";
       try {
         const specificKey = providerValue3 ? `${providerValue3}_preferredDownloadServer` : "";
-        preferredServer = ((specificKey ? yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get(specificKey) : void 0) || (yield (_h = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _h.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
+        preferredServer = ((specificKey ? yield (_f = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _f.get(specificKey) : void 0) || (yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
       } catch (e) {
       }
       const getPriority = (serverName = "") => {
@@ -796,49 +719,26 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers, providerContex
           return 0;
         }
         if (isDownload) {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage") || s.includes("resumable")) return 2;
-          if (s.includes("gdrive") || s.includes("instant")) return 3;
+          if (s.includes("cf storage") || s.includes("storage") || s.includes("resumable")) return 1;
+          if (s.includes("gdrive") || s.includes("google") || s.includes("instant")) return 2;
+          if (s.includes("pixeldrain")) return 3;
           if (s.includes("gofile")) return 4;
-          if (s.includes("pixeldrain")) return 5;
-          if (s.includes("fastdl")) return 6;
-          if (s.includes("hubcdn")) return 7;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
+          if (s.includes("hubcdn")) return 6;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 8;
           return 10;
         } else {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage")) return 2;
+          if (s.includes("cf storage") || s.includes("storage")) return 1;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 2;
           if (s.includes("gofile")) return 3;
           if (s.includes("pixeldrain")) return 4;
-          if (s.includes("fastdl")) return 5;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
           if (s.includes("hubcdn")) return 6;
-          if (s.includes("gdrive")) return 7;
+          if (s.includes("gdrive") || s.includes("google")) return 7;
           return 10;
         }
       };
       streamLinks.sort((a, b) => getPriority(a.server) - getPriority(b.server));
-      if (isDownload && streamLinks.length > 0) {
-        const isTopHealthy = yield checkStreamHealth(
-          streamLinks[0],
-          signal
-        );
-        if (!isTopHealthy) {
-          let healthyIndex = -1;
-          for (let i = 1; i < streamLinks.length; i++) {
-            const isHealthy = yield checkStreamHealth(
-              streamLinks[i],
-              signal
-            );
-            if (isHealthy) {
-              healthyIndex = i;
-              break;
-            }
-          }
-          if (healthyIndex > 0) {
-            const [workingStream] = streamLinks.splice(healthyIndex, 1);
-            streamLinks.unshift(workingStream);
-          }
-        }
-      }
       console.log("streamLinks", streamLinks);
       return streamLinks;
     } catch (error) {
@@ -916,13 +816,15 @@ function addQuality(streams, quality) {
 }
 function getDotflixUrl(data) {
   var _a;
-  return ((_a = data.match(/https?:\/\/dotflix\.[^\s"'<>]+\/share\/[a-z\d]+/i)) == null ? void 0 : _a[0]) || "";
+  return ((_a = data.match(
+    /https?:\/\/(?:[a-z\d-]+\.)*(?:dotflix|dtflix)\.[a-z\d.]+\/share\/[a-z\d]+/i
+  )) == null ? void 0 : _a[0]) || "";
 }
 function getDotflixSharingCode(value) {
   var _a;
   try {
     const url = new URL(value);
-    if (!/^(?:www\.)?dotflix\./i.test(url.hostname)) return "";
+    if (!/(?:^|\.)(?:dotflix|dtflix)\./i.test(url.hostname)) return "";
     return ((_a = url.pathname.match(/^\/share\/([a-z\d]+)/i)) == null ? void 0 : _a[1]) || "";
   } catch (e) {
     return "";
@@ -975,25 +877,180 @@ function getServerActionDownloadUrl(data) {
   }
   return "";
 }
-function followDownloadLink(link, signal, headers) {
+function getServerActionDriveUrl(data) {
+  if (typeof data !== "string") return "";
+  for (const line of data.split(/\r?\n/)) {
+    const value = line.slice(line.indexOf(":") + 1);
+    try {
+      const payload = JSON.parse(value);
+      if ((payload == null ? void 0 : payload.success) && typeof payload.driveUrl === "string") {
+        return payload.driveUrl;
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+  return "";
+}
+function callDotflixServerAction(link, actionId, sharingCode, signal, requestHeaders, providerContext) {
   return __async(this, null, function* () {
+    return providerContext.axios.post(link, JSON.stringify([sharingCode]), {
+      signal,
+      headers: __spreadProps(__spreadValues({}, requestHeaders), {
+        Accept: "text/x-component",
+        "Content-Type": "text/plain;charset=UTF-8",
+        "Next-Action": actionId,
+        "Next-Router-State-Tree": getDotflixRouterState(sharingCode)
+      })
+    });
+  });
+}
+function resolveDotflixWorkerUrl(driveUrl, signal, providerContext) {
+  return __async(this, null, function* () {
+    var _a;
+    try {
+      const res = yield providerContext.axios.post(
+        "https://dotflix.pobmovie0301.workers.dev/api/generate-link",
+        { driveUrl },
+        {
+          signal,
+          headers: { "Content-Type": "application/json" }
+        }
+      );
+      if (((_a = res.data) == null ? void 0 : _a.success) && typeof res.data.workerUrl === "string") {
+        return res.data.workerUrl;
+      }
+    } catch (e) {
+    }
+    return "";
+  });
+}
+function resolveDotflixActionsFromPage(link, signal, headers, providerContext) {
+  return __async(this, null, function* () {
+    try {
+      const origin = new URL(link).origin;
+      const res = yield providerContext.axios.get(link, {
+        signal,
+        headers: __spreadProps(__spreadValues({}, headers), { Referer: link })
+      });
+      const html = typeof res.data === "string" ? res.data : "";
+      if (!html) return {};
+      let initialShareData = null;
+      const shareDataMatch = html.match(/"initialShareData":\s*(\{[^}]+\})/);
+      if (shareDataMatch) {
+        try {
+          initialShareData = JSON.parse(shareDataMatch[1]);
+        } catch (e) {
+        }
+      }
+      const chunkMatches = [
+        ...html.matchAll(/src="([^"]*\/static\/chunks\/[^"]+\.js)"/g)
+      ].map((m) => m[1]);
+      if (!chunkMatches.length) return { initialShareData };
+      const chunkResponses = yield Promise.allSettled(
+        chunkMatches.map((src) => {
+          const chunkUrl = src.startsWith("http") ? src : origin + src;
+          return providerContext.axios.get(chunkUrl, {
+            signal,
+            headers: __spreadProps(__spreadValues({}, headers), { Referer: link })
+          });
+        })
+      );
+      let proxyAction;
+      let driveAction;
+      const secondLevelChunks = /* @__PURE__ */ new Set();
+      for (const r of chunkResponses) {
+        if (r.status !== "fulfilled") continue;
+        const text = typeof r.value.data === "string" ? r.value.data : "";
+        if (!text) continue;
+        if (!proxyAction) {
+          const m = text.match(
+            /createServerReference\)\("([a-f0-9]+)",[^)]*?"resolveProxyDownload"\)/
+          );
+          if (m) proxyAction = m[1];
+        }
+        if (!driveAction) {
+          const m = text.match(
+            /createServerReference\)\("([a-f0-9]+)",[^)]*?"getDriveUrl"\)/
+          );
+          if (m) driveAction = m[1];
+        }
+        const dynMatches = [
+          ...text.matchAll(/static\/chunks\/[a-zA-Z0-9_\-\.]+\.js/g)
+        ].map((m) => m[0]);
+        for (const d of dynMatches) {
+          secondLevelChunks.add("/_next/" + d);
+        }
+      }
+      if ((!proxyAction || !driveAction) && secondLevelChunks.size > 0) {
+        const dynResponses = yield Promise.allSettled(
+          [...secondLevelChunks].map((src) => {
+            const chunkUrl = src.startsWith("http") ? src : origin + src;
+            return providerContext.axios.get(chunkUrl, {
+              signal,
+              headers: __spreadProps(__spreadValues({}, headers), { Referer: link })
+            });
+          })
+        );
+        for (const r of dynResponses) {
+          if (r.status !== "fulfilled") continue;
+          const text = typeof r.value.data === "string" ? r.value.data : "";
+          if (!text) continue;
+          if (!proxyAction) {
+            const m = text.match(
+              /createServerReference\)\("([a-f0-9]+)",[^)]*?"resolveProxyDownload"\)/
+            );
+            if (m) proxyAction = m[1];
+          }
+          if (!driveAction) {
+            const m = text.match(
+              /createServerReference\)\("([a-f0-9]+)",[^)]*?"getDriveUrl"\)/
+            );
+            if (m) driveAction = m[1];
+          }
+        }
+      }
+      return { proxyAction, driveAction, initialShareData };
+    } catch (e) {
+      return {};
+    }
+  });
+}
+function followDownloadLink(link, signal, headers, providerContext) {
+  return __async(this, null, function* () {
+    var _a, _b;
     let currentUrl = link;
     for (let index = 0; index < 5; index += 1) {
-      const response = yield fetch(currentUrl, {
-        headers,
-        signal,
-        redirect: "manual"
-      });
-      const location = response.headers.get("location");
+      let location = null;
+      let data = "";
+      let responseUrl = currentUrl;
+      try {
+        const response = yield fetch(currentUrl, {
+          headers,
+          signal,
+          redirect: "manual"
+        });
+        location = response.headers.get("location");
+        if (!location) {
+          data = yield response.text();
+          responseUrl = response.url || currentUrl;
+        }
+      } catch (e) {
+        const res = yield providerContext.axios.get(currentUrl, {
+          headers,
+          signal,
+          maxRedirects: 0,
+          validateStatus: (status) => status >= 200 && status < 400
+        });
+        location = ((_a = res.headers) == null ? void 0 : _a.location) || ((_b = res.headers) == null ? void 0 : _b.Location) || null;
+        if (!location) {
+          data = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+        }
+      }
       if (location) {
         currentUrl = new URL(location, currentUrl).href;
         continue;
       }
-      if (!response.ok) {
-        throw new Error(`EonMovies download redirect failed: ${response.status}`);
-      }
-      const data = yield response.text();
-      const responseUrl = response.url || currentUrl;
       return {
         data,
         url: getDotflixSharingCode(responseUrl) ? responseUrl : getDotflixUrl(data) || responseUrl
@@ -1002,48 +1059,165 @@ function followDownloadLink(link, signal, headers) {
     throw new Error("EonMovies download redirect chain exceeded the limit");
   });
 }
-function extractDotflixStream(link, signal, headers, providerContext) {
+function extractDotflixStream(link, signal, headers, providerContext, isDownload) {
   return __async(this, null, function* () {
+    var _a, _b, _c;
     const sharingCode = getDotflixSharingCode(link);
     if (!sharingCode) return [];
     const origin = new URL(link).origin;
     const requestHeaders = __spreadProps(__spreadValues({}, headers), { Origin: origin, Referer: link });
-    const [directResult, proxyResult] = yield Promise.allSettled([
+    const kv = providerContext.kvStore;
+    let proxyAction = (yield kv == null ? void 0 : kv.get("dotflix_proxy_action")) || cachedProxyAction;
+    let driveAction = (yield kv == null ? void 0 : kv.get("dotflix_drive_action")) || cachedDriveAction;
+    const streams = [];
+    const seenLinks = /* @__PURE__ */ new Set();
+    const addStream = (server, streamUrl) => {
+      if (!streamUrl || seenLinks.has(streamUrl)) return;
+      seenLinks.add(streamUrl);
+      const isZip = /\.zip(\?|$)/i.test(streamUrl);
+      streams.push({
+        server,
+        link: streamUrl,
+        type: isZip ? "zip" : "mkv"
+      });
+    };
+    const [directRes, cfRes, proxyRes, driveRes] = yield Promise.allSettled([
       providerContext.axios.post(
         `${origin}/api/extract-download`,
         { sharingCode },
         {
           signal,
-          headers: __spreadProps(__spreadValues({}, requestHeaders), {
-            "Content-Type": "application/json"
-          })
+          headers: __spreadProps(__spreadValues({}, requestHeaders), { "Content-Type": "application/json" })
         }
       ),
-      providerContext.axios.post(link, JSON.stringify([sharingCode]), {
+      providerContext.axios.get(
+        `${origin}/api/secure-cloudflare-url/${sharingCode}`,
+        {
+          signal,
+          headers: __spreadProps(__spreadValues({}, requestHeaders), { Referer: link })
+        }
+      ),
+      callDotflixServerAction(
+        link,
+        proxyAction,
+        sharingCode,
         signal,
-        headers: __spreadProps(__spreadValues({}, requestHeaders), {
-          Accept: "text/x-component",
-          "Content-Type": "text/plain;charset=UTF-8",
-          "Next-Action": dotflixProxyAction,
-          "Next-Router-State-Tree": getDotflixRouterState(sharingCode)
-        })
-      })
+        requestHeaders,
+        providerContext
+      ),
+      callDotflixServerAction(
+        link,
+        driveAction,
+        sharingCode,
+        signal,
+        requestHeaders,
+        providerContext
+      )
     ]);
-    const streams = [];
-    if (directResult.status === "fulfilled") {
-      const data = directResult.value.data;
-      if ((data == null ? void 0 : data.success) && typeof data.downloadUrl === "string") {
-        streams.push({ server: "Dotflix", link: data.downloadUrl, type: "mkv" });
+    if (directRes.status === "fulfilled" && ((_a = directRes.value.data) == null ? void 0 : _a.success) && typeof directRes.value.data.downloadUrl === "string") {
+      addStream("Dotflix Direct", directRes.value.data.downloadUrl);
+    }
+    if (cfRes.status === "fulfilled" && ((_b = cfRes.value.data) == null ? void 0 : _b.success) && typeof cfRes.value.data.downloadUrl === "string") {
+      addStream("Dotflix (Cloudflare)", cfRes.value.data.downloadUrl);
+    }
+    let proxyUrl = proxyRes.status === "fulfilled" ? getServerActionDownloadUrl(proxyRes.value.data) : "";
+    if (proxyUrl) {
+      addStream("Dotflix Proxy", proxyUrl);
+    }
+    let driveUrl = driveRes.status === "fulfilled" ? getServerActionDriveUrl(driveRes.value.data) : "";
+    if (driveUrl) {
+      const workerUrl = yield resolveDotflixWorkerUrl(
+        driveUrl,
+        signal,
+        providerContext
+      );
+      if (workerUrl) {
+        addStream("Dotflix Worker", workerUrl);
       }
     }
-    if (proxyResult.status === "fulfilled") {
-      const proxyUrl = getServerActionDownloadUrl(proxyResult.value.data);
-      if (proxyUrl && !streams.some((stream) => stream.link === proxyUrl)) {
-        streams.push({ server: "Dotflix Proxy", link: proxyUrl, type: "mkv" });
+    if (!proxyUrl && !driveUrl) {
+      const resolved = yield resolveDotflixActionsFromPage(
+        link,
+        signal,
+        headers,
+        providerContext
+      );
+      let retryNeeded = false;
+      if (resolved.proxyAction && resolved.proxyAction !== proxyAction) {
+        proxyAction = resolved.proxyAction;
+        cachedProxyAction = proxyAction;
+        yield kv == null ? void 0 : kv.set("dotflix_proxy_action", proxyAction);
+        retryNeeded = true;
+      }
+      if (resolved.driveAction && resolved.driveAction !== driveAction) {
+        driveAction = resolved.driveAction;
+        cachedDriveAction = driveAction;
+        yield kv == null ? void 0 : kv.set("dotflix_drive_action", driveAction);
+        retryNeeded = true;
+      }
+      if (resolved.initialShareData) {
+        const data = resolved.initialShareData;
+        if (typeof data.pixeldrainLink === "string" && data.pixeldrainLink) {
+          const pdId = (_c = data.pixeldrainLink.match(/\/u\/([a-zA-Z0-9]+)/)) == null ? void 0 : _c[1];
+          if (pdId) {
+            addStream(
+              "Dotflix (PixelDrain)",
+              `https://pixeldrain.com/api/file/${pdId}?download`
+            );
+          }
+        }
+      }
+      if (retryNeeded) {
+        const [newProxyRes, newDriveRes] = yield Promise.allSettled([
+          callDotflixServerAction(
+            link,
+            proxyAction,
+            sharingCode,
+            signal,
+            requestHeaders,
+            providerContext
+          ),
+          callDotflixServerAction(
+            link,
+            driveAction,
+            sharingCode,
+            signal,
+            requestHeaders,
+            providerContext
+          )
+        ]);
+        if (newProxyRes.status === "fulfilled") {
+          const newProxyUrl = getServerActionDownloadUrl(newProxyRes.value.data);
+          if (newProxyUrl) addStream("Dotflix Proxy", newProxyUrl);
+        }
+        if (newDriveRes.status === "fulfilled") {
+          const newDriveUrl = getServerActionDriveUrl(newDriveRes.value.data);
+          if (newDriveUrl) {
+            const workerUrl = yield resolveDotflixWorkerUrl(
+              newDriveUrl,
+              signal,
+              providerContext
+            );
+            if (workerUrl) addStream("Dotflix Worker", workerUrl);
+          }
+        }
       }
     }
     if (!streams.length) {
       throw new Error("Dotflix did not return a direct or proxy download URL");
+    }
+    if (isDownload) {
+      streams.sort((a, b) => {
+        const aScore = a.server.includes("Proxy") || a.server.includes("Direct") ? 0 : 1;
+        const bScore = b.server.includes("Proxy") || b.server.includes("Direct") ? 0 : 1;
+        return aScore - bScore;
+      });
+    } else {
+      streams.sort((a, b) => {
+        const aScore = a.server.includes("Worker") || a.server.includes("Direct") ? 0 : 1;
+        const bScore = b.server.includes("Worker") || b.server.includes("Direct") ? 0 : 1;
+        return aScore - bScore;
+      });
     }
     return streams;
   });
@@ -1051,7 +1225,13 @@ function extractDotflixStream(link, signal, headers, providerContext) {
 function extractDownloadStreams(link, signal, headers, providerContext, isDownload) {
   return __async(this, null, function* () {
     if (getDotflixSharingCode(link)) {
-      return extractDotflixStream(link, signal, headers, providerContext);
+      return extractDotflixStream(
+        link,
+        signal,
+        headers,
+        providerContext,
+        isDownload
+      );
     }
     if (isHubcloudUrl(link)) {
       return hubcloudExtractor(
@@ -1077,15 +1257,14 @@ function getStream(_0) {
     isDownload
   }) {
     const headers = __spreadValues({}, providerContext.commonHeaders);
-    const page = yield followDownloadLink(link, signal, headers);
+    const page = yield followDownloadLink(link, signal, headers, providerContext);
     if (getDotflixSharingCode(page.url) || isHubcloudUrl(page.url)) {
       const streams2 = yield extractDownloadStreams(
         page.url,
         signal,
         headers,
         providerContext,
-        isDownload,
-        "eonMovies"
+        isDownload
       );
       return addQuality(streams2);
     }
@@ -1110,7 +1289,8 @@ function getStream(_0) {
       const downloadPage = yield followDownloadLink(
         downloadLink.link,
         signal,
-        headers
+        headers,
+        providerContext
       );
       if (!getDotflixSharingCode(downloadPage.url) && !isHubcloudUrl(downloadPage.url)) {
         continue;
@@ -1120,8 +1300,7 @@ function getStream(_0) {
         signal,
         headers,
         providerContext,
-        isDownload,
-        "eonMovies"
+        isDownload
       );
       addQuality(extracted, downloadLink.quality).forEach((stream) => {
         if (!seen.has(stream.link)) {
@@ -1133,12 +1312,13 @@ function getStream(_0) {
     return streams;
   });
 }
-var dotflixProxyAction;
+var cachedProxyAction, cachedDriveAction;
 var init_stream = __esm({
   "providers/eonMovies/stream.ts"() {
     "use strict";
     init_hubcloud();
-    dotflixProxyAction = "4020c531ae02b8be9927fed961160ff20b3f81aafa";
+    cachedProxyAction = "40be6d9fdcc81dd69cf943cccce3e8fcf190219950";
+    cachedDriveAction = "40e5348909ff78510ee46337a237c1352fcc630ad2";
   }
 });
 

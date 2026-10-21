@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-10-05T17:12:23Z",
+  "updatedAt": "2026-10-21T15:15:57Z",
   "providers": [
     {
       "id": "1cinevood",
@@ -43,6 +43,22 @@
       "icon": null
     },
     {
+      "id": "animesalt",
+      "name": "Animesalt",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/animesalt.js",
+      "icon": null
+    },
+    {
+      "id": "animesub",
+      "name": "Animesub",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/animesub.js",
+      "icon": null
+    },
+    {
       "id": "animetsu",
       "name": "Animetsu",
       "version": "1.0.0",
@@ -51,11 +67,27 @@
       "icon": null
     },
     {
+      "id": "animeworld",
+      "name": "Animeworld",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/animeworld.js",
+      "icon": null
+    },
+    {
       "id": "autoEmbed",
       "name": "Auto Embed",
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/autoEmbed.js",
+      "icon": null
+    },
+    {
+      "id": "castle",
+      "name": "Castle",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/castle.js",
       "icon": null
     },
     {
@@ -75,11 +107,27 @@
       "icon": null
     },
     {
+      "id": "disneyMirror",
+      "name": "Disney Mirror",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/disneyMirror.js",
+      "icon": null
+    },
+    {
       "id": "dooflix",
       "name": "Dooflix",
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/dooflix.js",
+      "icon": null
+    },
+    {
+      "id": "dramacool",
+      "name": "Dramacool",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/dramacool.js",
       "icon": null
     },
     {
@@ -96,6 +144,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/eonMovies.js",
+      "icon": null
+    },
+    {
+      "id": "everything",
+      "name": "Everything",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/everything.js",
       "icon": null
     },
     {
@@ -144,6 +200,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/hiAnime.js",
+      "icon": null
+    },
+    {
+      "id": "kartoons",
+      "name": "Kartoons",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/kartoons.js",
       "icon": null
     },
     {
@@ -227,6 +291,14 @@
       "icon": null
     },
     {
+      "id": "movielinkdb",
+      "name": "Movielinkdb",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/movielinkdb.js",
+      "icon": null
+    },
+    {
       "id": "movies4u",
       "name": "Movies4u",
       "version": "1.0.0",
@@ -256,6 +328,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/multi.js",
+      "icon": null
+    },
+    {
+      "id": "mxplayer",
+      "name": "Mxplayer",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/mxplayer.js",
       "icon": null
     },
     {
@@ -392,6 +472,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/world4u.js",
+      "icon": null
+    },
+    {
+      "id": "youtube",
+      "name": "Youtube",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/youtube.js",
       "icon": null
     },
     {

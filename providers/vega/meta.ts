@@ -16,15 +16,13 @@ const headers = {
   "Sec-Fetch-Dest": "document",
   "Sec-Fetch-Mode": "navigate",
   "Sec-Fetch-Site": "none",
-  "Sec-Fetch-User": "?1",
-  Cookie:
-    "xla=s4t; _ga=GA1.1.1081149560.1756378968; _ga_BLZGKYN5PF=GS2.1.s1756378968$o1$g1$t1756378984$j44$l0$h0",
   "Upgrade-Insecure-Requests": "1",
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
 };
 
-function applyCinemeta(info: Info, meta: CinemetaMeta): Info {
+function applyCinemeta(info: Info, meta?: CinemetaMeta | null): Info {
+  if (!meta) return info;
   return {
     ...info,
     title: meta.name || info.title,
@@ -62,13 +60,19 @@ export const getMeta = async ({
     });
     const $ = cheerio.load(response.data);
     const infoContainer = $(
-      ".entry-content, .post-inner, .post-content, .page-body",
-    );
+      ".entry-content, .post-content, .post-inner, .page-body",
+    ).first();
+    const cleanContainer = infoContainer.clone();
+    cleanContainer
+      .find(
+        "#comments, .comments-area, #respond, .comments, .related-posts, footer, script, style, .sidebar, .widget",
+      )
+      .remove();
 
     // title
     let title = $("h1.post-title").text().trim();
     if (!title) {
-      const heading = infoContainer?.find("h3");
+      const heading = cleanContainer.find("h3");
       const titleRegex = /Name: (.+)/;
       title = heading?.next("p")?.text()?.match(titleRegex)?.[1] || "";
     }
@@ -78,10 +82,10 @@ export const getMeta = async ({
     let imdbId =
       $('a[href*="imdb.com"]').attr("href")?.match(/tt\d+/)?.[0] || "";
     if (!imdbId) {
-      const heading = infoContainer?.find("h3");
+      const heading = cleanContainer.find("h3");
       imdbId =
         heading?.next("p")?.find("a")?.attr("href")?.match(/tt\d+/g)?.[0] ||
-        infoContainer.text().match(/tt\d+/g)?.[0] ||
+        cleanContainer.text().match(/tt\d+/g)?.[0] ||
         "";
     }
     // console.log(imdbId)
@@ -89,18 +93,19 @@ export const getMeta = async ({
     // type
     let type = "movie";
 
-    const heading = infoContainer?.find("h3");
-    const pageText = `${title} ${infoContainer.text()}`;
+    const heading = cleanContainer.find("h3");
+    const cleanText = `${title} ${cleanContainer.text()}`;
     if (
       heading?.next("p")?.text()?.includes("Series Name") ||
-      /\b(?:web\s+series|season\s*\d{1,2}|s\d{1,2}\s*e\d{1,3})\b/i.test(
-        pageText,
-      )
+      heading?.text()?.includes("Series Info") ||
+      /\b(?:web\s*series|tv\s*series)\b/i.test(cleanText) ||
+      /\bseason\s*\d{1,2}\b/i.test(title) ||
+      /\bs\d{1,2}\s*e\d{1,3}\b/i.test(title) ||
+      (/\bseason\s*\d{1,2}\b/i.test(cleanText) &&
+        !/\b(?:full\s*movie|movie\s*info)\b/i.test(cleanText))
     ) {
       type = "series";
     }
-
-    //   console.log(type);
 
     // synopsis
     let synopsis = "";
@@ -113,21 +118,23 @@ export const getMeta = async ({
     }
     if (!synopsis) {
       const synopsisNode = //@ts-ignore
-        infoContainer?.find("p")?.next("h3,h4")?.next("p")?.[0]?.children?.[0];
+        cleanContainer.find("p")?.next("h3,h4")?.next("p")?.[0]?.children?.[0];
       synopsis =
         synopsisNode && "data" in synopsisNode ? synopsisNode.data : "";
     }
-    //   console.log(synopsis);
 
     // image
     let image =
-      infoContainer?.find("img[data-lazy-src]")?.attr("data-lazy-src") ||
-      infoContainer
-        ?.find("img")
-        ?.filter((i, el) => {
-          const src = $(el).attr("src");
+      cleanContainer.find("img[data-src]").first().attr("data-src") ||
+      cleanContainer.find("img[data-lazy-src]").first().attr("data-lazy-src") ||
+      cleanContainer.find("img[data-orig-src]").first().attr("data-orig-src") ||
+      cleanContainer
+        .find("img")
+        .filter((i, el) => {
+          const src = $(el).attr("src") || "";
           return (
             !!src &&
+            !src.startsWith("data:") &&
             !src.includes("logo") &&
             !src.includes("svg") &&
             !src.includes("placeholder") &&
@@ -148,7 +155,7 @@ export const getMeta = async ({
     let hr = infoContainer?.first()?.find("hr");
 
     // Try to find the HR before the download buttons if possible
-    const firstButton = $(".dwd-button").first();
+    const firstButton = $(".dwd-button, a[href*='nexdrive'], a[href*='vcloud'], a[href*='fastdl'], a[href*='hubcloud']").first();
     if (firstButton.length > 0) {
       const containerP = firstButton.closest("p");
       let prev = containerP.prev();
@@ -164,53 +171,142 @@ export const getMeta = async ({
     const links: Link[] = [];
     list.each((index, element: any) => {
       element = $(element);
-      // title
-      const title = element?.text() || "";
+      
+      if (element.is("hr") || element.is("style") || element.is("script")) return;
 
-      const quality = element?.text().match(/\d+p\b/)?.[0] || "";
-      // console.log(title);
-      // movieLinks
-      const movieLinks =
-        element
-          ?.next()
-          .find(".dwd-button")
-          .text()
-          .toLowerCase()
-          .includes("download") ||
-        element.next().find("a").text().toLowerCase().includes("download")
-          ? element?.next().find(".dwd-button")?.parent()?.attr("href") ||
-            element?.next().find("a[href]")?.attr("href")
-          : "";
+      // Ignore elements that are button containers themselves
+      if (
+        element.find("a").length > 0 &&
+        (element.text().includes("Instant") ||
+          element.text().includes("Resumable") ||
+          element.text().includes("Download Now") ||
+          element.text().includes("Batch/Zip") ||
+          element.find(".dwd-button, .btn-outline").length > 0)
+      ) {
+        return;
+      }
 
-      // episode links
-      const vcloudLinks = element
-        ?.next()
-        .find(".btn-outline[style*='#ed0b0b']")
-        ?.parent()
-        ?.attr("href");
-      const episodesLink =
-        (vcloudLinks
-          ? vcloudLinks
-          : element
-                ?.next()
-                .find(".dwd-button")
-                .text()
-                .toLowerCase()
-                .includes("episode")
-            ? element?.next().find(".dwd-button")?.parent()?.attr("href")
-            : "") ||
-        element
-          ?.next()
-          .find(".btn-outline[style*='#0ebac3']")
-          ?.parent()
-          ?.attr("href");
-      if (movieLinks || episodesLink) {
+      let rawTitle = element.text();
+      // Clean all newlines, tabs, and multiple spaces
+      let title = rawTitle
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (!title) return;
+
+      // Filter out decorative lines (e.g. —–==___==—–, ===, ---, ***)
+      if (/^[\s\-_=~*•–—:|]+$/.test(title)) return;
+
+      // Filter out winding up / thank you / join telegram
+      const lower = title.toLowerCase();
+      if (
+        lower.includes("winding up") ||
+        lower.includes("thank you") ||
+        lower.includes("telegram") ||
+        lower.includes("how to download") ||
+        lower.includes("join our") ||
+        lower === "download now"
+      ) {
+        return;
+      }
+
+      // Quality extraction
+      const quality = title.match(/\d+p\b/i)?.[0] || "";
+
+      // If it's a section banner without quality like "• SEASON 2 | NetFlix •" preceding actual headings, skip it
+      if (
+        !quality &&
+        !/episodes?\s*[:\d\-]/i.test(title) &&
+        !/\[.*(?:mb|gb|e).*\]/i.test(title)
+      ) {
+        const nextEl = element.next();
+        if (
+          nextEl.length &&
+          (nextEl.is("h1, h2, h3, h4, h5, h6, strong") ||
+            (nextEl.is("p") && nextEl.find("strong").length))
+        ) {
+          return;
+        }
+      }
+
+      // Clean leading/trailing symbols, bullets, dashes from title
+      title = title.replace(/^[\s•\-*—_:=~|]+|[\s•\-*—_:=~|]+$/g, "").trim();
+      if (!title) return;
+
+      // Find the next sibling that contains download links
+      let nextP = element.next();
+      while (nextP.length && !nextP.is("hr") && !nextP.find("a[href]").length) {
+        nextP = nextP.next();
+      }
+
+      if (!nextP.length || nextP.is("hr")) return;
+
+      let btn;
+      if (type === "series") {
+        // For series: ONLY V-Cloud links are valid episode links. Never pick Batch/Zip!
+        btn = nextP
+          .find("a:contains('V-Cloud'), a:contains('vcloud'), a[href*='vcloud']")
+          .first();
+        if (!btn.length) {
+          // Fallback to other episode anchors ONLY if they are not Batch/Zip
+          btn = nextP
+            .find("a")
+            .filter((_, a) => {
+              const txt = $(a).text().toLowerCase();
+              const href = ($(a).attr("href") || "").toLowerCase();
+              return (
+                !txt.includes("zip") &&
+                !txt.includes("batch") &&
+                !href.includes("zip") &&
+                !href.includes("batch")
+              );
+            })
+            .first();
+        }
+      } else {
+        // For movies: V-Cloud first, then G-Direct, then others
+        btn = nextP
+          .find("a:contains('V-Cloud'), a:contains('vcloud'), a[href*='vcloud']")
+          .first();
+        if (!btn.length) {
+          btn = nextP
+            .find("a:contains('G-Direct'), a:contains('Direct'), a[href*='fastdl']")
+            .first();
+        }
+        if (!btn.length) {
+          btn = nextP.find(".dwd-button, .btn-outline").first().parent();
+        }
+        if (!btn.length || !btn.attr("href")) {
+          btn = nextP.find("a[href]").first();
+        }
+      }
+
+      if (!btn || !btn.length) return;
+
+      const btnHref = btn.attr("href") || "";
+      if (!btnHref || btnHref === "/" || btnHref === "#") return;
+
+      if (
+        links.some(
+          (l) =>
+            l.episodesLink === btnHref ||
+            (l.directLinks && l.directLinks[0]?.link === btnHref),
+        )
+      ) {
+        return;
+      }
+
+      if (type === "series") {
         links.push({
           title,
-          directLinks: movieLinks
-            ? [{ title: "Movie", link: movieLinks, type: "movie" }]
-            : [],
-          episodesLink,
+          episodesLink: btnHref,
+          quality,
+        });
+      } else {
+        links.push({
+          title,
+          directLinks: [{ title: "Movie", link: btnHref, type: "movie" }],
           quality,
         });
       }
@@ -228,23 +324,30 @@ export const getMeta = async ({
     };
     if (!imdbId) return websiteInfo;
 
-    const cinemeta = await getCinemetaMeta(imdbId, type, providerContext);
-    if (type === "series" && cinemeta.type === "series") {
-      websiteInfo.linkList = websiteInfo.linkList.map((item) => {
-        if (!item.episodesLink) return item;
-        const season = getSeasonNumber(item.title);
-        if (!season) return item;
-        return {
-          ...item,
-          episodesLink: addEpisodeContext(
-            new URL(item.episodesLink, url).href,
-            imdbId,
-            season,
-          ),
-        };
-      });
+    try {
+      const cinemeta = await getCinemetaMeta(imdbId, type, providerContext);
+      if (cinemeta) {
+        if (type === "series" && cinemeta.type === "series") {
+          websiteInfo.linkList = websiteInfo.linkList.map((item) => {
+            if (!item.episodesLink) return item;
+            const season = getSeasonNumber(item.title);
+            if (!season) return item;
+            return {
+              ...item,
+              episodesLink: addEpisodeContext(
+                new URL(item.episodesLink, url).href,
+                imdbId,
+                season,
+              ),
+            };
+          });
+        }
+        return applyCinemeta(websiteInfo, cinemeta);
+      }
+    } catch (e) {
+      console.warn("Vega: Cinemeta lookup failed", e);
     }
-    return applyCinemeta(websiteInfo, cinemeta);
+    return websiteInfo;
   } catch (error) {
     console.log("getInfo error");
     console.error(error);

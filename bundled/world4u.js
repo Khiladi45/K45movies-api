@@ -125,7 +125,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue) => __async(null, null, function* () {
       var _a, _b;
@@ -283,25 +283,31 @@ var init_meta = __esm({
           const res = yield axios.get(url);
           const data = res.data;
           const $ = cheerio.load(data);
-          const type = $(".entry-content").text().toLocaleLowerCase().includes("movie name") ? "movie" : "series";
+          const pageTitle = $("h1, .entry-title, title").first().text().replace("Download", "").trim();
+          const pageBody = $("body").text();
+          const isSeries = (/season\s*\d+/i.test(pageTitle) || /\[\s*s\d{1,2}\s*\]/i.test(pageTitle) || /(?:web\s*series|tv\s*series|series)/i.test(pageTitle) || /\[\s*s\d{1,2}\s*e\d{1,2}\s*\]/i.test(pageTitle) || /\[\s*e\d{1,2}\s*added\s*\]/i.test(pageTitle)) && !pageTitle.toLowerCase().includes("full movie");
+          const type = isSeries ? "series" : "movie";
           const imdbId = ((_a = $(".imdb_left").find("a").attr("href")) == null ? void 0 : _a.split("/")[4]) || "";
-          const title = $(".entry-content").find('strong:contains("Name")').children().remove().end().text().replace(":", "");
-          const synopsis = $(".entry-content").find('p:contains("Synopsis"),p:contains("Plot"),p:contains("Story")').children().remove().end().text();
-          const image = $(".wp-caption").find("img").attr("data-src") || $(".entry-content").find("img").attr("data-src") || "";
+          let title = $(".entry-content").find('strong:contains("Name")').first().children().remove().end().text().replace(":", "").replace(/\[.*?\]|\(.*?\)|\|.*/g, "").trim();
+          if (!title) {
+            title = pageTitle.replace(/\[.*?\]|\(.*?\)|\|.*/g, "").trim();
+          }
+          const synopsis = $(".entry-content").find('p:contains("Synopsis"),p:contains("Plot"),p:contains("Story")').first().children().remove().end().text().trim() || "";
+          const image = $(".wp-caption").find("img").attr("data-src") || $(".entry-content").find("img").attr("data-src") || $(".entry-content").find("img").attr("src") || "";
           const links = [];
           $(".my-button").map((i, element) => {
             var _a2;
-            const title2 = $(element).parent().parent().prev().text();
+            let linkTitle = $(element).parent().parent().prev().text().trim().replace(/[\r\n\t]+/g, " ");
             const episodesLink = $(element).attr("href");
-            const quality = ((_a2 = title2.match(/\b(480p|720p|1080p|2160p)\b/i)) == null ? void 0 : _a2[0]) || "";
-            if (episodesLink && title2) {
+            const quality = ((_a2 = linkTitle.match(/\b(480p|720p|1080p|2160p)\b/i)) == null ? void 0 : _a2[0]) || "";
+            if (episodesLink && linkTitle) {
               links.push({
-                title: title2,
+                title: linkTitle,
                 episodesLink: type === "series" ? episodesLink : "",
                 directLinks: type === "movie" ? [
                   {
                     link: episodesLink,
-                    title: title2,
+                    title: linkTitle,
                     type: "movie"
                   }
                 ] : [],

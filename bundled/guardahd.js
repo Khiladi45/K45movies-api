@@ -110,11 +110,14 @@ var init_posts = __esm({
             const id = (result == null ? void 0 : result.imdb_id) || (result == null ? void 0 : result.id);
             const type = result == null ? void 0 : result.type;
             const image = result == null ? void 0 : result.poster;
+            const rating = (result == null ? void 0 : result.imdbRating) || (result == null ? void 0 : result.rating);
+            const tag = rating ? `${rating}\u2605` : void 0;
             if (id) {
               catalog2.push({
                 title,
                 link: `https://v3-cinemeta.strem.io/meta/${type}/${id}.json`,
-                image
+                image,
+                tag
               });
             }
           });
@@ -149,11 +152,14 @@ var init_posts = __esm({
             const id = (result == null ? void 0 : result.imdb_id) || (result == null ? void 0 : result.id);
             const image = result == null ? void 0 : result.poster;
             const type = result == null ? void 0 : result.type;
+            const rating = (result == null ? void 0 : result.imdbRating) || (result == null ? void 0 : result.rating);
+            const tag = rating ? `${rating}\u2605` : void 0;
             if (id) {
               catalog2.push({
                 title,
                 link: `https://v3-cinemeta.strem.io/meta/${type}/${id}.json`,
-                image
+                image,
+                tag
               });
             }
           });
@@ -167,6 +173,35 @@ var init_posts = __esm({
   }
 });
 
+// providers/getCinemetaMeta.ts
+function formatEpisodeTitle(episode, name) {
+  const epNum = Number(episode);
+  if (!name || !name.trim()) {
+    return `Episode ${episode}`;
+  }
+  let cleanName = name.trim();
+  cleanName = cleanName.replace(/^(?:s\d+\s*e\d+|\d+x\d+)\s*[:.-]\s*/i, "");
+  cleanName = cleanName.replace(
+    new RegExp(`^episodes?\\s*0*${epNum}\\s*[:.-]\\s*`, "i"),
+    ""
+  );
+  if (new RegExp(`^0*${epNum}\\s*\\.\\s*`, "i").test(cleanName)) {
+    return cleanName;
+  }
+  if (new RegExp(`^0*${epNum}\\s*[:.-]\\s*`, "i").test(cleanName)) {
+    return `${epNum}. ${cleanName.replace(new RegExp(`^0*${epNum}\\s*[:.-]\\s*`, "i"), "")}`;
+  }
+  if (new RegExp(`^episodes?\\s*0*${epNum}$`, "i").test(cleanName)) {
+    return `Episode ${epNum}`;
+  }
+  return `${epNum}. ${cleanName}`;
+}
+var init_getCinemetaMeta = __esm({
+  "providers/getCinemetaMeta.ts"() {
+    "use strict";
+  }
+});
+
 // providers/guardahd/meta.ts
 var meta_exports = {};
 __export(meta_exports, {
@@ -176,6 +211,7 @@ var getMeta;
 var init_meta = __esm({
   "providers/guardahd/meta.ts"() {
     "use strict";
+    init_getCinemetaMeta();
     getMeta = function(_0) {
       return __async(this, arguments, function* ({
         link,
@@ -206,7 +242,7 @@ var init_meta = __esm({
                 season.set(video == null ? void 0 : video.season, []);
               }
               season.get(video == null ? void 0 : video.season).push({
-                title: "Episode " + (video == null ? void 0 : video.episode),
+                title: formatEpisodeTitle(video == null ? void 0 : video.episode, video == null ? void 0 : video.name),
                 type: "series",
                 link: `${(_a2 = data == null ? void 0 : data.meta) == null ? void 0 : _a2.imdb_id}-${(_b2 = video == null ? void 0 : video.id) == null ? void 0 : _b2.split(":")[1]}-${(_c2 = video == null ? void 0 : video.id) == null ? void 0 : _c2.split(":")[2]}`
               });

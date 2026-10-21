@@ -126,7 +126,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue) => __async(null, null, function* () {
       var _a, _b;
@@ -570,48 +570,6 @@ var init_gofile = __esm({
 });
 
 // providers/extractors/hubcloud.ts
-function checkStreamHealth(stream, signal) {
-  return __async(this, null, function* () {
-    if (!(stream == null ? void 0 : stream.link)) return false;
-    const reqHeaders = __spreadValues({
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
-    }, stream.headers || {});
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4e3);
-      if (signal) {
-        signal.addEventListener("abort", () => controller.abort(), { once: true });
-      }
-      const res = yield fetch(stream.link, {
-        method: "HEAD",
-        headers: reqHeaders,
-        signal: controller.signal,
-        redirect: "follow"
-      });
-      clearTimeout(timeoutId);
-      if (res.status >= 200 && res.status < 400) {
-        return true;
-      }
-      if (res.status === 405 || res.status === 403) {
-        const getController = new AbortController();
-        const getTimeoutId = setTimeout(() => getController.abort(), 4e3);
-        if (signal) {
-          signal.addEventListener("abort", () => getController.abort(), { once: true });
-        }
-        const getRes = yield fetch(stream.link, {
-          method: "GET",
-          headers: __spreadProps(__spreadValues({}, reqHeaders), { Range: "bytes=0-0" }),
-          signal: getController.signal
-        });
-        clearTimeout(getTimeoutId);
-        return getRes.status >= 200 && getRes.status < 400;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  });
-}
 function resolveGofileLink(gofileLink, axios, providerContext) {
   return __async(this, null, function* () {
     try {
@@ -637,14 +595,14 @@ function resolveGofileLink(gofileLink, axios, providerContext) {
 }
 function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerContext, isDownload, providerValue) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
       if (!headers3["Cookie"]) {
         headers3["Cookie"] = "ext_name=ojplmecpdpgccookcobabopnaifgidhf; xla=s4t; cf_clearance=woQrFGXtLfmEMBEiGUsVHrUBMT8s3cmguIzmMjmvpkg-1770053679-1.2.1.1-xBrQdciOJsweUF6F2T_OtH6jmyanN_TduQ0yslc_XqjU6RcHSxI7.YOKv6ry7oYo64868HYoULnVyww536H2eVI3R2e4wKzsky6abjPdfQPxqpUaXjxfJ02o6jl3_Vkwr4uiaU7Wy596Vdst3y78HXvVmKdIohhtPvp.vZ9_L7wvWdce0GRixjh_6JiqWmWMws46hwEt3hboaS1e1e4EoWCvj5b0M_jVwvSxBOAW5emFzvT3QrnRh4nyYmKDERnY";
       }
       console.log("hubcloudExtractor", link);
       const baseUrl = link.split("/").slice(0, 3).join("/");
-      const streamLinks = [];
+      const streamLinks2 = [];
       const openWebView = providerContext == null ? void 0 : providerContext.openWebView;
       let vLinkRes;
       try {
@@ -656,11 +614,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
               `hubcloudExtractor: WAF detected (403) for ${link}, using solver...`
             );
             const cleanHeaders = __spreadProps(__spreadValues({}, headers3), { Referer: baseUrl });
-            delete cleanHeaders["User-Agent"];
-            delete cleanHeaders["sec-ch-ua"];
-            delete cleanHeaders["sec-ch-ua-mobile"];
-            delete cleanHeaders["sec-ch-ua-platform"];
-            delete cleanHeaders["Cookie"];
             const wafResult = yield openWebView(baseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -688,8 +641,8 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
         const gfHref = $vLink(el).attr("href");
         if (gfHref) {
           const gfStream = yield resolveGofileLink(gfHref, axios, providerContext);
-          if (gfStream && !streamLinks.some((s) => s.link === gfStream.link)) {
-            streamLinks.push(gfStream);
+          if (gfStream && !streamLinks2.some((s) => s.link === gfStream.link)) {
+            streamLinks2.push(gfStream);
           }
         }
       }
@@ -701,8 +654,8 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
       }
       if (vcloudLink == null ? void 0 : vcloudLink.includes("gofile.io")) {
         const gfStream = yield resolveGofileLink(vcloudLink, axios, providerContext);
-        if (gfStream && !streamLinks.some((s) => s.link === gfStream.link)) {
-          streamLinks.push(gfStream);
+        if (gfStream && !streamLinks2.some((s) => s.link === gfStream.link)) {
+          streamLinks2.push(gfStream);
         }
       }
       let vcloudText = "";
@@ -717,11 +670,6 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
             );
             const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
             const cleanHeaders2 = __spreadProps(__spreadValues({}, headers3), { Referer: vcloudBaseUrl });
-            delete cleanHeaders2["User-Agent"];
-            delete cleanHeaders2["sec-ch-ua"];
-            delete cleanHeaders2["sec-ch-ua-mobile"];
-            delete cleanHeaders2["sec-ch-ua-platform"];
-            delete cleanHeaders2["Cookie"];
             const wafResult = yield openWebView(vcloudBaseUrl, {
               title: "Solve the captcha below and click done",
               description: "Required to bypass anti-bot protection.",
@@ -734,48 +682,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
             const retryRes = yield axios.get(vcloudLink, { headers: headers3, signal });
             vcloudText = retryRes.data;
           } else {
-            if (((_c = error.response) == null ? void 0 : _c.status) === 403 && !openWebView) {
-              console.log(
-                `hubcloudExtractor: 403 Forbidden for ${vcloudLink}, but openWebView solver is not available!`
-              );
-            }
-            let fetchRes = yield fetch(vcloudLink, {
-              headers: headers3,
-              signal,
-              redirect: "follow"
-            });
-            if (fetchRes.status === 403 && openWebView) {
-              console.log(
-                `hubcloudExtractor: WAF detected (403) for ${vcloudLink}, using solver...`
-              );
-              const vcloudBaseUrl = vcloudLink.split("/").slice(0, 3).join("/");
-              const cleanHeaders3 = __spreadProps(__spreadValues({}, headers3), { Referer: vcloudBaseUrl });
-              delete cleanHeaders3["User-Agent"];
-              delete cleanHeaders3["sec-ch-ua"];
-              delete cleanHeaders3["sec-ch-ua-mobile"];
-              delete cleanHeaders3["sec-ch-ua-platform"];
-              delete cleanHeaders3["Cookie"];
-              const wafResult = yield openWebView(vcloudBaseUrl, {
-                title: "Solve the captcha below and click done",
-                description: "Required to bypass anti-bot protection.",
-                headers: cleanHeaders3,
-                waitForCookie: "cf_clearance",
-                force: true
-              });
-              if (wafResult.userAgent) headers3["User-Agent"] = wafResult.userAgent;
-              headers3["Cookie"] = (headers3["Cookie"] ? headers3["Cookie"] + "; " : "") + wafResult.cookies;
-              fetchRes = yield fetch(vcloudLink, {
-                headers: headers3,
-                signal,
-                redirect: "follow"
-              });
-            }
-            if (!fetchRes.ok) {
-              throw new Error(
-                `HTTP ${fetchRes.status} ${fetchRes.statusText} | URL ${vcloudLink}`
-              );
-            }
-            vcloudText = yield fetchRes.text();
+            throw error;
           }
         }
       }
@@ -799,49 +706,65 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
                 );
                 link2 = redirectedPixelDrainUrl;
               }
-              const token = (_d = link2.split("/").pop()) == null ? void 0 : _d.split("?")[0];
+              const token = (_c = link2.split("/").pop()) == null ? void 0 : _c.split("?")[0];
               const baseUrl2 = link2.split("/").slice(0, -2).join("/");
               link2 = `${baseUrl2}/api/file/${token}?download`;
             }
-            streamLinks.push({ server: "Pixeldrain", link: link2, type: "mkv" });
+            streamLinks2.push({ server: "Pixeldrain", link: link2, type: "mkv" });
             break;
           case ((link2 == null ? void 0 : link2.includes(".dev")) && !(link2 == null ? void 0 : link2.includes("/?id="))):
-            streamLinks.push({ server: "CF Worker", link: link2, type: "mkv" });
+            streamLinks2.push({ server: "CF Worker", link: link2, type: "mkv" });
             break;
           case ((link2 == null ? void 0 : link2.includes("hubcloud")) || (link2 == null ? void 0 : link2.includes("/?id="))):
             try {
-              const newLinkRes = yield fetch(link2, {
-                method: "HEAD",
-                headers: headers3,
-                signal,
-                redirect: "manual"
-              });
               let newLink = link2;
-              if (newLinkRes.status >= 300 && newLinkRes.status < 400) {
-                newLink = newLinkRes.headers.get("location") || link2;
-              } else if (newLinkRes.url && newLinkRes.url !== link2) {
-                newLink = newLinkRes.url;
-              } else {
-                newLink = newLinkRes.headers.get("location") || link2;
+              try {
+                if (typeof fetch !== "undefined") {
+                  const fRes = yield fetch(link2, {
+                    headers: headers3,
+                    signal,
+                    redirect: "follow"
+                  });
+                  if (fRes.url && fRes.url.includes("googleusercontent")) {
+                    newLink = fRes.url.split("?link=")[1] || fRes.url;
+                  } else if (fRes.url && fRes.url !== link2) {
+                    newLink = fRes.url;
+                  }
+                }
+              } catch (e) {
               }
-              if (newLink.includes("googleusercontent")) {
-                newLink = newLink.split("?link=")[1];
-              } else {
-                const newLinkRes2 = yield fetch(newLink, {
-                  method: "HEAD",
-                  headers: headers3,
-                  signal,
-                  redirect: "manual"
-                });
-                if (newLinkRes2.status >= 300 && newLinkRes2.status < 400) {
-                  newLink = ((_e = newLinkRes2.headers.get("location")) == null ? void 0 : _e.split("?link=")[1]) || newLink;
-                } else if (newLinkRes2.url && newLinkRes2.url !== newLink) {
-                  newLink = newLinkRes2.url.split("?link=")[1] || newLinkRes2.url;
-                } else {
-                  newLink = ((_f = newLinkRes2.headers.get("location")) == null ? void 0 : _f.split("?link=")[1]) || newLink;
+              if (!newLink.includes("googleusercontent")) {
+                try {
+                  const res1 = yield axios.get(newLink, {
+                    headers: headers3,
+                    signal,
+                    maxRedirects: 0,
+                    validateStatus: (s) => s >= 200 && s < 400
+                  });
+                  if ((_d = res1.headers) == null ? void 0 : _d["location"]) {
+                    newLink = res1.headers["location"];
+                  }
+                  if (newLink.includes("googleusercontent")) {
+                    newLink = newLink.split("?link=")[1] || newLink;
+                  } else if (newLink.includes("http")) {
+                    const res2 = yield axios.get(newLink, {
+                      headers: headers3,
+                      signal,
+                      maxRedirects: 0,
+                      validateStatus: (s) => s >= 200 && s < 400
+                    });
+                    if ((_e = res2.headers) == null ? void 0 : _e["location"]) {
+                      const loc2 = res2.headers["location"];
+                      newLink = loc2.includes("?link=") ? loc2.split("?link=")[1] : loc2;
+                    }
+                  }
+                } catch (e) {
                 }
               }
-              streamLinks.push({
+              if (newLink.includes("?link=")) {
+                newLink = newLink.split("?link=")[1] || newLink;
+              }
+              streamLinks2.push({
                 server: "GDrive (download only)",
                 link: newLink,
                 type: "mkv"
@@ -853,21 +776,21 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
           case (link2 == null ? void 0 : link2.includes("gofile.io")):
             try {
               const gfStream = yield resolveGofileLink(link2, axios, providerContext);
-              if (gfStream && !streamLinks.some((s) => s.link === gfStream.link)) {
-                streamLinks.push(gfStream);
+              if (gfStream && !streamLinks2.some((s) => s.link === gfStream.link)) {
+                streamLinks2.push(gfStream);
               }
             } catch (error) {
               console.log("hubcloudExtractor error in gofile link: ", error);
             }
             break;
           case (link2 == null ? void 0 : link2.includes("cloudflarestorage")):
-            streamLinks.push({ server: "CF Storage", link: link2, type: "mkv" });
+            streamLinks2.push({ server: "CF Storage", link: link2, type: "mkv" });
             break;
           case ((link2 == null ? void 0 : link2.includes("fastdl")) || (link2 == null ? void 0 : link2.includes("fsl."))):
-            streamLinks.push({ server: "FastDl", link: link2, type: "mkv" });
+            streamLinks2.push({ server: "FastDl", link: link2, type: "mkv" });
             break;
           case (link2.includes("hubcdn") && !link2.includes("/?id=")):
-            streamLinks.push({
+            streamLinks2.push({
               server: "HubCdn",
               link: link2,
               type: "mkv"
@@ -876,7 +799,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
           default:
             if ((link2 == null ? void 0 : link2.includes(".mkv")) || (link2 == null ? void 0 : link2.includes("?token="))) {
               const serverName = "CF Worker";
-              streamLinks.push({ server: serverName, link: link2, type: "mkv" });
+              streamLinks2.push({ server: serverName, link: link2, type: "mkv" });
             }
             break;
         }
@@ -884,7 +807,7 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
       let preferredServer = "auto";
       try {
         const specificKey = providerValue ? `${providerValue}_preferredDownloadServer` : "";
-        preferredServer = ((specificKey ? yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get(specificKey) : void 0) || (yield (_h = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _h.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
+        preferredServer = ((specificKey ? yield (_f = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _f.get(specificKey) : void 0) || (yield (_g = providerContext == null ? void 0 : providerContext.kvStore) == null ? void 0 : _g.get("preferredDownloadServer")) || "auto").toLowerCase().trim();
       } catch (e) {
       }
       const getPriority = (serverName = "") => {
@@ -893,51 +816,28 @@ function hubcloudExtractor(link, signal, axios, cheerio, headers3, providerConte
           return 0;
         }
         if (isDownload) {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage") || s.includes("resumable")) return 2;
-          if (s.includes("gdrive") || s.includes("instant")) return 3;
+          if (s.includes("cf storage") || s.includes("storage") || s.includes("resumable")) return 1;
+          if (s.includes("gdrive") || s.includes("google") || s.includes("instant")) return 2;
+          if (s.includes("pixeldrain")) return 3;
           if (s.includes("gofile")) return 4;
-          if (s.includes("pixeldrain")) return 5;
-          if (s.includes("fastdl")) return 6;
-          if (s.includes("hubcdn")) return 7;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
+          if (s.includes("hubcdn")) return 6;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 8;
           return 10;
         } else {
-          if (s.includes("cf worker") || s.includes("fast cloud")) return 1;
-          if (s.includes("cf storage")) return 2;
+          if (s.includes("cf storage") || s.includes("storage")) return 1;
+          if (s.includes("cf worker") || s.includes("worker") || s.includes("fast cloud")) return 2;
           if (s.includes("gofile")) return 3;
           if (s.includes("pixeldrain")) return 4;
-          if (s.includes("fastdl")) return 5;
+          if (s.includes("fastdl") || s.includes("fsl")) return 5;
           if (s.includes("hubcdn")) return 6;
-          if (s.includes("gdrive")) return 7;
+          if (s.includes("gdrive") || s.includes("google")) return 7;
           return 10;
         }
       };
-      streamLinks.sort((a, b) => getPriority(a.server) - getPriority(b.server));
-      if (isDownload && streamLinks.length > 0) {
-        const isTopHealthy = yield checkStreamHealth(
-          streamLinks[0],
-          signal
-        );
-        if (!isTopHealthy) {
-          let healthyIndex = -1;
-          for (let i = 1; i < streamLinks.length; i++) {
-            const isHealthy = yield checkStreamHealth(
-              streamLinks[i],
-              signal
-            );
-            if (isHealthy) {
-              healthyIndex = i;
-              break;
-            }
-          }
-          if (healthyIndex > 0) {
-            const [workingStream] = streamLinks.splice(healthyIndex, 1);
-            streamLinks.unshift(workingStream);
-          }
-        }
-      }
-      console.log("streamLinks", streamLinks);
-      return streamLinks;
+      streamLinks2.sort((a, b) => getPriority(a.server) - getPriority(b.server));
+      console.log("streamLinks", streamLinks2);
+      return streamLinks2;
     } catch (error) {
       throwProviderError("HubCloud", `extract ${link}`, error);
     }
@@ -988,7 +888,7 @@ var init_hubcloud = __esm({
 // providers/extractors/gdflix.ts
 function gdflixExtractor(link, signal, axios, cheerio, headers3, providerContext) {
   return __async(this, null, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
       let wafCookies;
       try {
@@ -1012,7 +912,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers3, providerContext
       if (wafCookies) {
         headers3["Cookie"] = wafCookies;
       }
-      const streamLinks = [];
+      const streamLinks2 = [];
       const res = yield axios(`${link}`, { headers: headers3, signal });
       console.log("gdflixExtractor", link);
       const data = res.data;
@@ -1053,7 +953,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers3, providerContext
           );
           const resumeBotDownloadData = yield resumeBotDownload.json();
           console.log("resumeBotDownloadData", resumeBotDownloadData.url);
-          streamLinks.push({
+          streamLinks2.push({
             server: "ResumeBot",
             link: resumeBotDownloadData.url,
             type: "mkv"
@@ -1065,7 +965,7 @@ function gdflixExtractor(link, signal, axios, cheerio, headers3, providerContext
           const $resumeDrive = cheerio.load(resumeDriveHtml);
           const resumeLink = $resumeDrive(".btn-success").attr("href");
           if (resumeLink) {
-            streamLinks.push({
+            streamLinks2.push({
               server: "ResumeCloud",
               link: resumeLink,
               type: "mkv"
@@ -1077,49 +977,67 @@ function gdflixExtractor(link, signal, axios, cheerio, headers3, providerContext
       }
       try {
         const seed = $drive(".btn-danger").attr("href") || "";
-        console.log("seed", seed);
-        if (!seed.includes("?url=")) {
-          const newLinkRes = yield axios.head(seed, { headers: headers3, signal });
-          console.log("newLinkRes", (_f = newLinkRes.request) == null ? void 0 : _f.responseURL);
-          const newLink = ((_i = (_h = (_g = newLinkRes.request) == null ? void 0 : _g.responseURL) == null ? void 0 : _h.split("?url=")) == null ? void 0 : _i[1]) || seed;
-          streamLinks.push({ server: "G-Drive", link: newLink, type: "mkv" });
-        } else {
-          const instantToken = seed.split("=")[1];
-          const InstantFromData = new FormData();
-          InstantFromData.append("keys", instantToken);
-          const videoSeedUrl = seed.split("/").slice(0, 3).join("/") + "/api";
-          const instantLinkRes = yield fetch(videoSeedUrl, {
-            method: "POST",
-            body: InstantFromData,
-            headers: {
-              "x-token": videoSeedUrl
+        if (seed && seed.startsWith("http")) {
+          if (seed.includes("url=")) {
+            const directPart = decodeURIComponent(seed.split("url=")[1]);
+            if (directPart && directPart.startsWith("http")) {
+              streamLinks2.push({ server: "Instant Download", link: directPart, type: "mkv" });
             }
-          });
-          const instantLinkData = yield instantLinkRes.json();
-          if (instantLinkData.error === false) {
-            const instantLink = instantLinkData.url;
-            streamLinks.push({
-              server: "G-Drive (download only)",
-              link: instantLink,
-              type: "mkv"
+          }
+          try {
+            const vRes = yield axios.get(seed, {
+              headers: __spreadProps(__spreadValues({}, headers3), { Referer: link }),
+              maxRedirects: 0,
+              validateStatus: (s) => s >= 200 && s < 400,
+              signal
             });
-          } else {
-            console.log("Instant link not found", instantLinkData);
+            const loc = (_f = vRes.headers) == null ? void 0 : _f.location;
+            if (loc) {
+              let directGoogleUrl = null;
+              if (loc.includes("url=")) {
+                directGoogleUrl = decodeURIComponent(loc.split("url=")[1]);
+              } else if (loc.includes("googleusercontent.com") || loc.startsWith("http")) {
+                directGoogleUrl = loc;
+              }
+              if (directGoogleUrl && directGoogleUrl.startsWith("http")) {
+                streamLinks2.push({ server: "Instant Download", link: directGoogleUrl, type: "mkv" });
+              }
+            } else if (typeof vRes.data === "string") {
+              const upMatch = vRes.data.match(/window\.location\.href\s*=\s*["']([^"']+)["']/);
+              if (upMatch) {
+                const upPath = upMatch[1];
+                const vOrigin = new URL(seed).origin;
+                const upUrl = upPath.startsWith("http") ? upPath : vOrigin + upPath;
+                const upRes = yield axios.get(upUrl, {
+                  headers: __spreadProps(__spreadValues({}, headers3), { Referer: seed }),
+                  signal
+                });
+                const loc2 = (_g = upRes.headers) == null ? void 0 : _g.location;
+                if (loc2 && loc2.startsWith("http")) {
+                  streamLinks2.push({ server: "Instant Download", link: loc2, type: "mkv" });
+                } else if (typeof upRes.data === "string") {
+                  const $up = cheerio.load(upRes.data);
+                  const dlBtn = $up("#downloadBtn, a.btn-danger, a.btn-success").attr("href");
+                  if (dlBtn && dlBtn.startsWith("http")) {
+                    streamLinks2.push({ server: "Instant Download", link: dlBtn, type: "mkv" });
+                  }
+                }
+              }
+            }
+          } catch (e) {
           }
         }
-      } catch (err) {
-        console.log("Instant link not found", err);
+      } catch (e) {
       }
-      return streamLinks;
+      return streamLinks2;
     } catch (error) {
-      throwProviderError("GDFlix", `extract ${link}`, error);
+      return streamLinks;
     }
   });
 }
 var init_gdflix = __esm({
   "providers/extractors/gdflix.ts"() {
     "use strict";
-    init_providerErrors();
   }
 });
 
@@ -1139,7 +1057,7 @@ function getStream(_0) {
     var _a, _b, _c, _d;
     const { axios, cheerio, commonHeaders } = providerContext;
     try {
-      const streamLinks = [];
+      const streamLinks2 = [];
       console.log("Joya9tv getStream link:", link);
       if (link.includes("gdflix")) {
         return yield gdflixExtractor(
@@ -1227,7 +1145,7 @@ function getStream(_0) {
                 }
               );
               if ((_d = (_c = filepressStreamLink.data) == null ? void 0 : _c.data) == null ? void 0 : _d[0]) {
-                streamLinks.push({
+                streamLinks2.push({
                   server: "filepress",
                   link: filepressStreamLink.data.data[0],
                   type: "mkv"
@@ -1252,7 +1170,7 @@ function getStream(_0) {
             "Joya9tv"
           );
           if (Array.isArray(hubStreams) && hubStreams.length > 0) {
-            streamLinks.push(...hubStreams);
+            streamLinks2.push(...hubStreams);
           }
         } catch (err) {
           console.log("hubcloudExtractor error:", err);
@@ -1269,13 +1187,13 @@ function getStream(_0) {
             providerContext
           );
           if (Array.isArray(gdStreams) && gdStreams.length > 0) {
-            streamLinks.push(...gdStreams);
+            streamLinks2.push(...gdStreams);
           }
         } catch (err) {
           console.log("gdflixExtractor error:", err);
         }
       }
-      return streamLinks;
+      return streamLinks2;
     } catch (error) {
       throwProviderError("Joya9TV", "stream", error);
     }

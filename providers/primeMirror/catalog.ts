@@ -1,15 +1,19 @@
 export const catalog = [
   {
-    title: "Home",
-    filter: "/mobile/home?app=1",
+    title: "Featured Originals: Movies",
+    filter: "Featured Originals: Movies",
   },
   {
-    title: "Series",
-    filter: "/mobile/series",
+    title: "Featured Originals: Series",
+    filter: "Featured Originals: Series",
   },
   {
-    title: "Movies",
-    filter: "/mobile/movies",
+    title: "Drama TV",
+    filter: "Drama TV",
+  },
+  {
+    title: "Comedy Series",
+    filter: "Comedy Series",
   },
 ];
 

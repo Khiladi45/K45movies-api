@@ -1,12 +1,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const providersDir = path.join(__dirname, "providers");
+const bundledDir = path.join(__dirname, "bundled");
 const outputFile = path.join(__dirname, "manifest.json");
 
-// Must match bundle-providers.js so every manifest entry has a real bundle.
-const MODULES = ["catalog", "posts", "meta", "stream", "episodes"];
-const EXCLUDE_DIRS = new Set(["extractors"]);
 const VERSION = "1.0.0";
 
 // Turn a folder id like "4khdhub" / "netflixMirror" into a display name.
@@ -20,20 +17,12 @@ function humanize(id) {
     .join(" ");
 }
 
+// Derive entries from the actual bundle output so the manifest can never
+// reference a provider whose bundle failed to build.
 const providers = fs
-  .readdirSync(providersDir, { withFileTypes: true })
-  .filter(
-    (dirent) =>
-      dirent.isDirectory() &&
-      !dirent.name.startsWith(".") &&
-      !EXCLUDE_DIRS.has(dirent.name),
-  )
-  .map((dirent) => dirent.name)
-  .filter((id) =>
-    MODULES.some((mod) =>
-      fs.existsSync(path.join(providersDir, id, `${mod}.ts`)),
-    ),
-  )
+  .readdirSync(bundledDir)
+  .filter((file) => file.endsWith(".js"))
+  .map((file) => path.basename(file, ".js"))
   .sort()
   .map((id) => ({
     id,

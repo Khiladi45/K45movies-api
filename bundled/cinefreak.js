@@ -134,7 +134,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue3) => __async(null, null, function* () {
       var _a, _b;
@@ -273,40 +273,73 @@ function getCache2() {
   }
   return state.__vegaCinemetaCache__;
 }
-function getCinemetaMeta(imdbId, type, providerContext) {
-  if (!/^tt\d+$/.test(imdbId)) {
-    return Promise.reject(new Error(`Invalid IMDb ID: ${imdbId}`));
-  }
-  const cache = getCache2();
-  const cached = cache[imdbId];
-  if (cached) {
-    if (isCinemetaPromise(cached)) {
-      return cached;
-    }
-    if (cached.name && cached.imdb_id === imdbId) {
-      return Promise.resolve(cached);
-    }
-    delete cache[imdbId];
-  }
-  const mediaType = type === "series" ? "series" : "movie";
-  const url = `${CINEMETA_BASE_URL}/${mediaType}/${imdbId}.json`;
-  const request = providerContext.axios.get(url).then((response) => {
+function resolveTmdbToImdb(tmdbId, type, providerContext) {
+  return __async(this, null, function* () {
     var _a;
-    const meta = (_a = response.data) == null ? void 0 : _a.meta;
-    if (!(meta == null ? void 0 : meta.name) || meta.imdb_id !== imdbId) {
-      throw new Error(`Cinemeta returned invalid metadata for ${imdbId}`);
+    try {
+      const tmdbType = type === "series" ? "tv" : "movie";
+      const res = yield providerContext.axios.get(
+        `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/external_ids?api_key=cfe422613b250f702980a3bbf9e90716`,
+        { timeout: 5e3 }
+      );
+      const imdb = (_a = res.data) == null ? void 0 : _a.imdb_id;
+      if (typeof imdb === "string" && /^tt\d+$/.test(imdb)) {
+        return imdb;
+      }
+    } catch (e) {
     }
-    cache[imdbId] = meta;
-    return meta;
-  }).catch((error) => {
-    delete cache[imdbId];
-    throw error;
+    return null;
   });
-  cache[imdbId] = request;
-  return request;
+}
+function getCinemetaMeta(id, type, providerContext) {
+  return __async(this, null, function* () {
+    var _a;
+    if (!id || typeof id !== "string") {
+      return null;
+    }
+    let cleanImdbId = (_a = id.match(/tt\d+/)) == null ? void 0 : _a[0];
+    if (!cleanImdbId) {
+      const tmdbMatch = id.match(/(?:themoviedb\.org\/(?:movie|tv)\/|tmdb:?)(\d+)/i) || id.match(/^(\d+)$/);
+      if (tmdbMatch) {
+        cleanImdbId = (yield resolveTmdbToImdb(tmdbMatch[1], type, providerContext)) || void 0;
+      }
+    }
+    if (!cleanImdbId) {
+      return null;
+    }
+    const cache = getCache2();
+    const cached = cache[cleanImdbId];
+    if (cached) {
+      if (isCinemetaPromise(cached)) {
+        return cached;
+      }
+      if (cached.name && cached.imdb_id === cleanImdbId) {
+        return cached;
+      }
+      delete cache[cleanImdbId];
+    }
+    const mediaType = type === "series" ? "series" : "movie";
+    const url = `${CINEMETA_BASE_URL}/${mediaType}/${cleanImdbId}.json`;
+    const request = providerContext.axios.get(url, { timeout: 8e3 }).then((response) => {
+      var _a2;
+      const meta = (_a2 = response.data) == null ? void 0 : _a2.meta;
+      if (!(meta == null ? void 0 : meta.name) || meta.imdb_id !== cleanImdbId) {
+        delete cache[cleanImdbId];
+        return null;
+      }
+      cache[cleanImdbId] = meta;
+      return meta;
+    }).catch(() => {
+      delete cache[cleanImdbId];
+      return null;
+    });
+    cache[cleanImdbId] = request;
+    return request;
+  });
 }
 function applyCinemetaMeta(info, meta) {
   var _a;
+  if (!meta) return info;
   return __spreadProps(__spreadValues({}, info), {
     title: meta.name || info.title,
     image: meta.background || meta.poster || info.image,
@@ -336,13 +369,17 @@ function getEpisodeNumber(title, season) {
     ...title.matchAll(/\bs\d{1,2}\s*e(\d{1,3})\b/gi),
     ...title.matchAll(/\bepisodes?\s*:?\s*(\d{1,3})\b/gi),
     ...title.matchAll(/\bep\s*\.?:?\s*(\d{1,3})\b/gi),
-    ...title.matchAll(/\be(\d{1,3})\b/gi)
+    ...title.matchAll(/\be(\d{1,3})\b/gi),
+    ...title.matchAll(/^\s*(\d{1,3})\s*[.:-]\s*/gi)
   ].map((match) => Number(match[1]));
   const episodes = [...new Set(matches.filter((episode) => episode > 0))];
   return episodes.length === 1 ? episodes[0] : void 0;
 }
 function enrichCinemetaEpisodes(episodes, videos, season) {
   var _a;
+  if (!videos || !Array.isArray(videos) || videos.length === 0 || !season) {
+    return episodes;
+  }
   const videosByEpisode = /* @__PURE__ */ new Map();
   let hasDuplicateVideo = false;
   for (const video of videos) {
@@ -824,59 +861,58 @@ function resolveCinecloudUrl(link) {
   }
   return link;
 }
-function followRedirect(link, headers, signal, cheerio) {
+function followRedirect(link, headers, signal, cheerio, axios) {
   return __async(this, null, function* () {
     var _a, _b;
-    const newLinkRes = yield fetch(link, {
-      method: "GET",
-      headers,
-      signal,
-      redirect: "manual"
-    });
-    let newLink = link;
-    if (newLinkRes.status >= 300 && newLinkRes.status < 400) {
-      newLink = newLinkRes.headers.get("location") || link;
-    } else if (newLinkRes.status === 200) {
-      try {
-        const html = yield newLinkRes.text();
-        const $ = cheerio.load(html);
-        let instantLink = $("a.instant-download, a.download-btn, a.fsl-btn, a.server-btn").attr("href");
-        if (!instantLink) {
-          instantLink = $("a.btn-success").attr("href");
-        }
-        if (instantLink && instantLink !== "#") {
-          newLink = instantLink;
-        }
-      } catch (e) {
-        console.warn("followRedirect: failed to parse 200 body", e);
-      }
-    } else if (newLinkRes.url && newLinkRes.url !== link) {
-      newLink = newLinkRes.url;
-    } else {
-      newLink = newLinkRes.headers.get("location") || link;
-    }
-    if (newLink.startsWith("/")) {
-      const url = new URL(link);
-      newLink = `${url.origin}${newLink}`;
-    }
-    if (newLink.includes("googleusercontent")) {
-      newLink = newLink.split("?link=")[1] || newLink;
-    } else if (newLink !== link) {
-      const newLinkRes2 = yield fetch(newLink, {
-        method: "GET",
+    try {
+      const res1 = yield axios.get(link, {
         headers,
         signal,
-        redirect: "manual"
+        maxRedirects: 0,
+        timeout: 8e3,
+        validateStatus: (s) => s >= 200 && s < 400
       });
-      if (newLinkRes2.status >= 300 && newLinkRes2.status < 400) {
-        newLink = ((_a = newLinkRes2.headers.get("location")) == null ? void 0 : _a.split("?link=")[1]) || newLink;
-      } else if (newLinkRes2.url && newLinkRes2.url !== newLink) {
-        newLink = newLinkRes2.url.split("?link=")[1] || newLinkRes2.url;
-      } else {
-        newLink = ((_b = newLinkRes2.headers.get("location")) == null ? void 0 : _b.split("?link=")[1]) || newLink;
+      let newLink = link;
+      if ((_a = res1.headers) == null ? void 0 : _a["location"]) {
+        newLink = res1.headers["location"];
+      } else if (res1.status === 200 && typeof res1.data === "string") {
+        try {
+          const $ = cheerio.load(res1.data);
+          const instantLink = $(
+            "a.instant-download, a.download-btn, a.fsl-btn, a.server-btn, a.btn-success"
+          ).attr("href");
+          if (instantLink && instantLink !== "#") {
+            newLink = instantLink;
+          }
+        } catch (e) {
+        }
       }
+      if (newLink.startsWith("/")) {
+        const url = new URL(link);
+        newLink = `${url.origin}${newLink}`;
+      }
+      if (newLink.includes("googleusercontent")) {
+        newLink = newLink.split("?link=")[1] || newLink;
+      } else if (newLink !== link && newLink.startsWith("http")) {
+        try {
+          const res2 = yield axios.get(newLink, {
+            headers,
+            signal,
+            maxRedirects: 0,
+            timeout: 8e3,
+            validateStatus: (s) => s >= 200 && s < 400
+          });
+          if ((_b = res2.headers) == null ? void 0 : _b["location"]) {
+            const loc = res2.headers["location"];
+            newLink = loc.includes("?link=") ? loc.split("?link=")[1] : loc;
+          }
+        } catch (e) {
+        }
+      }
+      return newLink;
+    } catch (e) {
+      return link;
     }
-    return newLink;
   });
 }
 function getStream(_0) {
@@ -961,7 +997,7 @@ function getStream(_0) {
           if (href.includes(".dev") && !href.includes("/?id=")) {
             streamLinks.push({ server: "Fast Cloud", link: href, type: "mkv" });
           } else if (href.includes("/w/") || href.includes("/gp/") || text.includes("instant download")) {
-            const newLink = yield followRedirect(href, commonHeaders, signal, cheerio);
+            const newLink = yield followRedirect(href, commonHeaders, signal, cheerio, axios);
             if (newLink && newLink !== href) {
               streamLinks.push({
                 server: text.includes("v2") || href.includes("/gp/") ? "Instant V2 (download only)" : "Instant (download only)",
@@ -1034,77 +1070,21 @@ function getStream(_0) {
           return 0;
         }
         if (isDownload) {
-          if (s.includes("fast cloud")) return 1;
-          if (s.includes("resumable")) return 2;
-          if (s.includes("instant (download only)")) return 3;
-          if (s.includes("instant v2")) return 4;
-          if (s.includes("stream online")) return 5;
+          if (s.includes("resumable") || s.includes("storage")) return 1;
+          if (s.includes("instant (download only)")) return 2;
+          if (s.includes("instant v2")) return 3;
+          if (s.includes("stream online")) return 4;
+          if (s.includes("fast cloud") || s.includes("worker")) return 5;
         } else {
-          if (s.includes("fast cloud")) return 1;
-          if (s.includes("stream online")) return 2;
-          if (s.includes("resumable")) return 3;
+          if (s.includes("resumable") || s.includes("storage")) return 1;
+          if (s.includes("fast cloud") || s.includes("worker")) return 2;
+          if (s.includes("stream online")) return 3;
           if (s.includes("instant (download only)")) return 4;
           if (s.includes("instant v2")) return 5;
         }
         return 6;
       };
       streamLinks.sort((a, b) => getPriority(a.server) - getPriority(b.server));
-      if (isDownload && streamLinks.length > 0) {
-        const checkHealth = (linkUrl) => __async(null, null, function* () {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 4e3);
-            if (signal) {
-              signal.addEventListener("abort", () => controller.abort(), { once: true });
-            }
-            const res = yield fetch(linkUrl, {
-              method: "HEAD",
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-              },
-              signal: controller.signal,
-              redirect: "follow"
-            });
-            clearTimeout(timeoutId);
-            if (res.status >= 200 && res.status < 400) return true;
-            if (res.status === 405 || res.status === 403) {
-              const getController = new AbortController();
-              const getTimeoutId = setTimeout(() => getController.abort(), 4e3);
-              if (signal) {
-                signal.addEventListener("abort", () => getController.abort(), { once: true });
-              }
-              const getRes = yield fetch(linkUrl, {
-                method: "GET",
-                headers: {
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                  Range: "bytes=0-0"
-                },
-                signal: getController.signal
-              });
-              clearTimeout(getTimeoutId);
-              return getRes.status >= 200 && getRes.status < 400;
-            }
-            return false;
-          } catch (e) {
-            return false;
-          }
-        });
-        const isTopHealthy = yield checkHealth(streamLinks[0].link);
-        if (!isTopHealthy) {
-          let healthyIndex = -1;
-          for (let i = 1; i < streamLinks.length; i++) {
-            const isHealthy = yield checkHealth(streamLinks[i].link);
-            if (isHealthy) {
-              healthyIndex = i;
-              break;
-            }
-          }
-          if (healthyIndex > 0) {
-            const [workingStream] = streamLinks.splice(healthyIndex, 1);
-            streamLinks.unshift(workingStream);
-          }
-        }
-      }
       return streamLinks;
     } catch (error) {
       throwProviderError("CineFreak", "stream", error);

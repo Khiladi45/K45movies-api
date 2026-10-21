@@ -110,11 +110,14 @@ var init_posts = __esm({
             const id = (result == null ? void 0 : result.imdb_id) || (result == null ? void 0 : result.id);
             const type = result == null ? void 0 : result.type;
             const image = result == null ? void 0 : result.poster;
+            const rating = (result == null ? void 0 : result.imdbRating) || (result == null ? void 0 : result.rating);
+            const tag = rating ? `${rating}\u2605` : void 0;
             if (id) {
               catalog2.push({
                 title,
                 link: `https://v3-cinemeta.strem.io/meta/${type}/${id}.json`,
-                image
+                image,
+                tag
               });
             }
           });
@@ -149,11 +152,14 @@ var init_posts = __esm({
             const id = (result == null ? void 0 : result.imdb_id) || (result == null ? void 0 : result.id);
             const image = result == null ? void 0 : result.poster;
             const type = result == null ? void 0 : result.type;
+            const rating = (result == null ? void 0 : result.imdbRating) || (result == null ? void 0 : result.rating);
+            const tag = rating ? `${rating}\u2605` : void 0;
             if (id) {
               catalog2.push({
                 title,
                 link: `https://v3-cinemeta.strem.io/meta/${type}/${id}.json`,
-                image
+                image,
+                tag
               });
             }
           });
@@ -164,6 +170,35 @@ var init_posts = __esm({
         }
       });
     };
+  }
+});
+
+// providers/getCinemetaMeta.ts
+function formatEpisodeTitle(episode, name) {
+  const epNum = Number(episode);
+  if (!name || !name.trim()) {
+    return `Episode ${episode}`;
+  }
+  let cleanName = name.trim();
+  cleanName = cleanName.replace(/^(?:s\d+\s*e\d+|\d+x\d+)\s*[:.-]\s*/i, "");
+  cleanName = cleanName.replace(
+    new RegExp(`^episodes?\\s*0*${epNum}\\s*[:.-]\\s*`, "i"),
+    ""
+  );
+  if (new RegExp(`^0*${epNum}\\s*\\.\\s*`, "i").test(cleanName)) {
+    return cleanName;
+  }
+  if (new RegExp(`^0*${epNum}\\s*[:.-]\\s*`, "i").test(cleanName)) {
+    return `${epNum}. ${cleanName.replace(new RegExp(`^0*${epNum}\\s*[:.-]\\s*`, "i"), "")}`;
+  }
+  if (new RegExp(`^episodes?\\s*0*${epNum}$`, "i").test(cleanName)) {
+    return `Episode ${epNum}`;
+  }
+  return `${epNum}. ${cleanName}`;
+}
+var init_getCinemetaMeta = __esm({
+  "providers/getCinemetaMeta.ts"() {
+    "use strict";
   }
 });
 
@@ -214,7 +249,7 @@ var urlsEndpoint, cacheTtl, getBaseUrl;
 var init_getBaseUrl = __esm({
   "providers/getBaseUrl.ts"() {
     "use strict";
-    urlsEndpoint = "https://raw.githubusercontent.com/Zenda-Cross/vega-providers/refs/heads/main/urls.json";
+    urlsEndpoint = "https://raw.githubusercontent.com/Khiladi45/K45movies-api/main/urls.json";
     cacheTtl = 60 * 60 * 1e3;
     getBaseUrl = (providerValue) => __async(null, null, function* () {
       var _a, _b;
@@ -238,6 +273,7 @@ var getMeta;
 var init_meta = __esm({
   "providers/ridoMovies/meta.ts"() {
     "use strict";
+    init_getCinemetaMeta();
     init_getBaseUrl();
     getMeta = function(_0) {
       return __async(this, arguments, function* ({
@@ -295,7 +331,7 @@ var init_meta = __esm({
                 season.set(video == null ? void 0 : video.season, []);
               }
               season.get(video == null ? void 0 : video.season).push({
-                title: "Episode " + (video == null ? void 0 : video.episode),
+                title: formatEpisodeTitle(video == null ? void 0 : video.episode, video == null ? void 0 : video.name),
                 link: ""
               });
             });
