@@ -287,7 +287,12 @@ const providerContext = {
   },
   openWebView,
   kvStore,
-  Aes: {},
+  // primewire signs its search URL with Aes.sha1 — the app sandbox injects a
+  // real SHA-1, so the test context must too.
+  Aes: {
+    sha1: async (input) =>
+      require("crypto").createHash("sha1").update(String(input), "utf8").digest("hex"),
+  },
 };
 
 module.exports = { providerContext };
