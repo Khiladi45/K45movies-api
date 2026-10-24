@@ -91,22 +91,6 @@
       "icon": null
     },
     {
-      "id": "cinefreak",
-      "name": "Cinefreak",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/cinefreak.js",
-      "icon": null
-    },
-    {
-      "id": "cinemaLuxe",
-      "name": "Cinema Luxe",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/cinemaLuxe.js",
-      "icon": null
-    },
-    {
       "id": "disneyMirror",
       "name": "Disney Mirror",
       "version": "1.0.0",
@@ -139,35 +123,11 @@
       "icon": null
     },
     {
-      "id": "eonMovies",
-      "name": "Eon Movies",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/eonMovies.js",
-      "icon": null
-    },
-    {
       "id": "everything",
       "name": "Everything",
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/everything.js",
-      "icon": null
-    },
-    {
-      "id": "filmyfly",
-      "name": "Filmyfly",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/filmyfly.js",
-      "icon": null
-    },
-    {
-      "id": "flixhq",
-      "name": "Flixhq",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/flixhq.js",
       "icon": null
     },
     {
@@ -211,22 +171,6 @@
       "icon": null
     },
     {
-      "id": "katMovieFix",
-      "name": "Kat Movie Fix",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/katMovieFix.js",
-      "icon": null
-    },
-    {
-      "id": "katmovies",
-      "name": "Katmovies",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/katmovies.js",
-      "icon": null
-    },
-    {
       "id": "kickAssAnime",
       "name": "Kick Ass Anime",
       "version": "1.0.0",
@@ -259,30 +203,6 @@
       "icon": null
     },
     {
-      "id": "mkvDrama",
-      "name": "Mkv Drama",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/mkvDrama.js",
-      "icon": null
-    },
-    {
-      "id": "mod",
-      "name": "Mod",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/mod.js",
-      "icon": null
-    },
-    {
-      "id": "movieBox",
-      "name": "Movie Box",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/movieBox.js",
-      "icon": null
-    },
-    {
       "id": "movieBoxWeb",
       "name": "Movie Box Web",
       "version": "1.0.0",
@@ -304,14 +224,6 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/movies4u.js",
-      "icon": null
-    },
-    {
-      "id": "moviesApi",
-      "name": "Movies Api",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/moviesApi.js",
       "icon": null
     },
     {
@@ -363,30 +275,6 @@
       "icon": null
     },
     {
-      "id": "primewire",
-      "name": "Primewire",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/primewire.js",
-      "icon": null
-    },
-    {
-      "id": "protonMovies",
-      "name": "Proton Movies",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/protonMovies.js",
-      "icon": null
-    },
-    {
-      "id": "ridoMovies",
-      "name": "Rido Movies",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/ridoMovies.js",
-      "icon": null
-    },
-    {
       "id": "ringz",
       "name": "Ringz",
       "version": "1.0.0",
@@ -400,30 +288,6 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/showbox.js",
-      "icon": null
-    },
-    {
-      "id": "skyMovieHD",
-      "name": "Sky Movie HD",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/skyMovieHD.js",
-      "icon": null
-    },
-    {
-      "id": "tokyoInsider",
-      "name": "Tokyo Insider",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/tokyoInsider.js",
-      "icon": null
-    },
-    {
-      "id": "topmovies",
-      "name": "Topmovies",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/topmovies.js",
       "icon": null
     },
     {
@@ -467,27 +331,11 @@
       "icon": null
     },
     {
-      "id": "world4u",
-      "name": "World4u",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/world4u.js",
-      "icon": null
-    },
-    {
       "id": "youtube",
       "name": "Youtube",
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/youtube.js",
-      "icon": null
-    },
-    {
-      "id": "zeefliz",
-      "name": "Zeefliz",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/zeefliz.js",
       "icon": null
     }
   ]

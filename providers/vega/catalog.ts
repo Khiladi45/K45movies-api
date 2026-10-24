@@ -15,6 +15,58 @@ export const catalog = [
     title: "Apple TV+",
     filter: "web-series/apple-tv",
   },
+  {
+    title: "Korean",
+    filter: "/korean-series",
+  },
+   {
+    title: "Action",
+    filter: "category/movies-by-genres/action",
+  },
+  {
+    title: "Adventure",
+    filter: "category/movies-by-genres/adventure",
+  },
+  {
+    title: "Comedy",
+    filter: "category/movies-by-genres/comedy",
+  },
+  {
+    title: "Crime",
+    filter: "category/movies-by-genres/crime",
+  },
+  {
+    title: "Family",
+    filter: "category/movies-by-genres/family",
+  },
+  {
+    title: "Fantasy",
+    filter: "category/movies-by-genres/fantasy",
+  },
+  {
+    title: "Horror",
+    filter: "category/movies-by-genres/horror",
+  },
+  {
+    title: "Mystery",
+    filter: "category/movies-by-genres/mystery",
+  },
+  {
+    title: "Romance",
+    filter: "category/movies-by-genres/romance",
+  },
+  {
+    title: "Sci-Fi",
+    filter: "category/movies-by-genres/sci-fi",
+  },
+  {
+    title: "Sport",
+    filter: "category/movies-by-genres/sport",
+  },
+  {
+    title: "Thriller",
+    filter: "category/movies-by-genres/thriller",
+  }
 ];
 
 export const genres = [

@@ -3,8 +3,7 @@ export const catalog = [
   { title: "Movies", filter: "movies" },
   { title: "Series", filter: "series" },
   { title: "K-drama", filter: "genre/k-drama" },
-
-  /*// OTT
+  
   { title: "Amazon Prime", filter: "genre/amazon-prime" },
   { title: "Jio Hotstar", filter: "genre/disney-hotstar" },
   { title: "Jio OTT", filter: "genre/jio-ott" },
@@ -15,6 +14,6 @@ export const catalog = [
   { title: "Zee 5", filter: "genre/zee-5" },
 
   // Genre
-  { title: "Action", filter: "genre/action" },*/
+  { title: "Action", filter: "genre/action" },
   
 ];

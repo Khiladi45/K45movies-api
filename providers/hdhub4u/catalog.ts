@@ -12,8 +12,28 @@ export const catalog = [
     filter: "/category/hollywood-movies",
   },
   {
+    title: "HD Movies",
+    filter: "/category/hd-movies",
+  },
+  {
+    title: "Sci-Fi",
+    filter: "/category/sifi",
+  },
+  {
+    title: "Thriller",
+    filter: "/category/triller",
+  },
+  {
     title: "South Movies",
     filter: "/category/south-hindi-movies",
+  },
+  {
+    title: "Action",
+    filter: "/category/action",
+  },
+  {
+    title: "Crime",
+    filter: "/category/crime",
   },
 ];
 

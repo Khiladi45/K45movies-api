@@ -7,6 +7,26 @@ export const catalog = [
     title: "Netflix",
     filter: "web-series/netflix",
   },
+   {
+    title: "Tamil",
+    filter: "/tamil",
+  },
+   {
+    title: "Telugu",
+     filter: "/telugu",
+  },
+   {
+    title: "Malayalam",
+     filter: "/malayalam",
+  },
+   {
+    title: "ZEE5",
+    filter: "web-series/zee5-originals",
+  },
+  {
+    title: "SonyLiv",
+    filter: "web-series/sonyliv",
+  },
   {
     title: "Amazon Prime",
     filter: "web-series/amazon-prime-video",
