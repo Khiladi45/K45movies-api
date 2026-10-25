@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-10-21T15:15:57Z",
+  "updatedAt": "2026-10-25T07:45:10Z",
   "providers": [
     {
       "id": "1cinevood",
@@ -336,6 +336,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/youtube.js",
+      "icon": null
+    },
+    {
+      "id": "zeefliz",
+      "name": "Zeefliz",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/zeefliz.js",
       "icon": null
     }
   ]

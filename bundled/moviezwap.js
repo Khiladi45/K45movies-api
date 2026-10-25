@@ -52,11 +52,11 @@ var init_catalog = __esm({
     catalog = [
       {
         title: "Telugu Movies",
-        filter: "/category/Telugu-(2025)-Movies.html"
+        filter: "/category/Telugu-(2026)-Movies.html"
       },
       {
         title: "Tamil Movies",
-        filter: "/category/Tamil-(2025)-Movies.html"
+        filter: "/category/Tamil-(2026)-Movies.html"
       },
       {
         title: "Hollywood Telugu Dubbed",

@@ -80,6 +80,18 @@ var init_catalog = __esm({
         filter: "category/netflix/"
       },
       {
+        title: "Amazon Prime",
+        filter: "category/amzn-prime-video/"
+      },
+      {
+        title: "Korean",
+        filter: "category/k-drama/"
+      },
+      {
+        title: "Web series",
+        filter: "category/web/"
+      },
+      {
         title: "4K",
         filter: "category/2160p-4k/"
       }
