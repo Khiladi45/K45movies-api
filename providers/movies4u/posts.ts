@@ -19,7 +19,7 @@ const defaultHeaders = {
   "sec-fetch-user": "?1",
   "upgrade-insecure-requests": "1",
   cookie: "Antiddos-systems-DH=395a53ac840ad21dff778291a3ffae36",
-  Referer: "https://movies4u.vg/category/web-series/",
+  Referer: "https://movies4u.tc/category/web-series/",
 };
 
 // --- Normal catalog posts ---

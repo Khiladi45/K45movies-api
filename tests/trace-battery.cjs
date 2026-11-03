@@ -7,7 +7,7 @@ const providers = process.argv.slice(2).length
   : [
       "vega", "castle", "hdhub4u", "moviesmod", "uhdmovies", "primewire",
       "movies4u", "drive", "multi", "showbox", "kissKh", "protonMovies",
-      "zeefliz", "topmovies", "gokuHD", "flixhq", "dramacool",
+      "zeefliz", "topmovies", "gokuHD", "flixhq",
     ];
 
 for (const p of providers) {

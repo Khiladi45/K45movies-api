@@ -85,11 +85,11 @@ var init_catalog = __esm({
       },
       {
         title: "Sci-Fi",
-        filter: "/category/sifi"
+        filter: "/category/sci-fi"
       },
       {
         title: "Thriller",
-        filter: "/category/triller"
+        filter: "/category/thriller"
       },
       {
         title: "South Movies",
@@ -97,7 +97,7 @@ var init_catalog = __esm({
       },
       {
         title: "Action",
-        filter: "/category/action"
+        filter: "/category/action-movies"
       },
       {
         title: "Crime",
@@ -107,7 +107,7 @@ var init_catalog = __esm({
     genres = [
       {
         title: "Action",
-        filter: "/category/action"
+        filter: "/category/action-movies"
       },
       {
         title: "Crime",
@@ -131,11 +131,11 @@ var init_catalog = __esm({
       },
       {
         title: "Sci-Fi",
-        filter: "/category/sifi"
+        filter: "/category/sci-fi"
       },
       {
         title: "Thriller",
-        filter: "/category/triller"
+        filter: "/category/thriller"
       },
       {
         title: "Romance",

@@ -17,11 +17,11 @@ export const catalog = [
   },
   {
     title: "Sci-Fi",
-    filter: "/category/sifi",
+    filter: "/category/sci-fi",
   },
   {
     title: "Thriller",
-    filter: "/category/triller",
+    filter: "/category/thriller",
   },
   {
     title: "South Movies",
@@ -29,7 +29,7 @@ export const catalog = [
   },
   {
     title: "Action",
-    filter: "/category/action",
+    filter: "/category/action-movies",
   },
   {
     title: "Crime",
@@ -40,7 +40,7 @@ export const catalog = [
 export const genres = [
   {
     title: "Action",
-    filter: "/category/action",
+    filter: "/category/action-movies",
   },
   {
     title: "Crime",
@@ -64,11 +64,11 @@ export const genres = [
   },
   {
     title: "Sci-Fi",
-    filter: "/category/sifi",
+    filter: "/category/sci-fi",
   },
   {
     title: "Thriller",
-    filter: "/category/triller",
+    filter: "/category/thriller",
   },
   {
     title: "Romance",

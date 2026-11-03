@@ -1,13 +1,13 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-10-25T07:45:10Z",
+  "updatedAt": "2026-11-03T03:07:19Z",
   "providers": [
     {
-      "id": "1cinevood",
-      "name": "1cinevood",
-      "version": "1.0.0",
+      "id": "1flex",
+      "name": "1Flex",
+      "version": "1.0.5",
       "description": null,
-      "bundleUrl": "bundled/1cinevood.js",
+      "bundleUrl": "bundled/1flex.js",
       "icon": null
     },
     {
@@ -24,14 +24,6 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/Joya9tv.js",
-      "icon": null
-    },
-    {
-      "id": "a111477",
-      "name": "A111477",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/a111477.js",
       "icon": null
     },
     {
@@ -56,14 +48,6 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/animesub.js",
-      "icon": null
-    },
-    {
-      "id": "animetsu",
-      "name": "Animetsu",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/animetsu.js",
       "icon": null
     },
     {
@@ -99,22 +83,6 @@
       "icon": null
     },
     {
-      "id": "dooflix",
-      "name": "Dooflix",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/dooflix.js",
-      "icon": null
-    },
-    {
-      "id": "dramacool",
-      "name": "Dramacool",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/dramacool.js",
-      "icon": null
-    },
-    {
       "id": "drive",
       "name": "Drive",
       "version": "1.0.0",
@@ -123,27 +91,11 @@
       "icon": null
     },
     {
-      "id": "everything",
-      "name": "Everything",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/everything.js",
-      "icon": null
-    },
-    {
       "id": "gokuHD",
       "name": "Goku HD",
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/gokuHD.js",
-      "icon": null
-    },
-    {
-      "id": "guardahd",
-      "name": "Guardahd",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/guardahd.js",
       "icon": null
     },
     {
@@ -160,14 +112,6 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/hiAnime.js",
-      "icon": null
-    },
-    {
-      "id": "kartoons",
-      "name": "Kartoons",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/kartoons.js",
       "icon": null
     },
     {
@@ -259,27 +203,11 @@
       "icon": null
     },
     {
-      "id": "ogomovies",
-      "name": "Ogomovies",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/ogomovies.js",
-      "icon": null
-    },
-    {
       "id": "primeMirror",
       "name": "Prime Mirror",
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/primeMirror.js",
-      "icon": null
-    },
-    {
-      "id": "ringz",
-      "name": "Ringz",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/ringz.js",
       "icon": null
     },
     {
@@ -312,14 +240,6 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/uniquestream.js",
-      "icon": null
-    },
-    {
-      "id": "vadapav",
-      "name": "Vadapav",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/vadapav.js",
       "icon": null
     },
     {

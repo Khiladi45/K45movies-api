@@ -63,13 +63,13 @@
     "name": "kmmovies",
     "url": "https://kmmovies.autos"
   },
+  "movies4u": {
+    "name": "movies4u",
+    "url": "https://movies4u.tc"
+  },
   "joya9tv": {
     "name": "joya9tv1",
     "url": "https://joya9tv1.com"
-  },
-  "1cinevood": {
-    "name": "cinewood",
-    "url": "https://new4.cinevood.capital"
   },
   "anikoto": {
     "name": "anikoto",
@@ -102,9 +102,5 @@
   "mxplayer": {
     "name": "mxplayer",
     "url": "https://www.mxplayer.in"
-  },
-  "dramacool": {
-    "name": "DramaCool",
-    "url": "https://asianc.id"
   }
 }
