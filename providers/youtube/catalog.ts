@@ -3,7 +3,10 @@ import { Catalog } from "../types";
 export const catalog: Catalog[] = [
   { title: "Trending", filter: "trending" },
   { title: "Music", filter: "trending music" },
+  { title: "Live", filter: "live now" },
   { title: "Gaming", filter: "trending gaming" },
+  // "#shorts" switches posts.ts into Shorts mode (portrait 9:16 results only).
+  { title: "Shorts", filter: "#shorts trending" },
   { title: "Movies & Trailers", filter: "official movie trailers" },
   { title: "News", filter: "world news" },
   { title: "Documentaries", filter: "documentary full" },
