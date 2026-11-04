@@ -17,6 +17,16 @@ export interface Post {
   borderRadius?: number;
   tag?: string;
   cornerTag?: string;
+  // Structured video metadata. Only video providers (e.g. YouTube) fill these;
+  // every other provider simply leaves them undefined.
+  videoId?: string;
+  channelName?: string;
+  channelAvatar?: string;
+  views?: string; // e.g. "1.2M views"
+  publishedTime?: string; // e.g. "2 days ago"
+  duration?: string; // e.g. "14:20"; empty for Shorts and live streams
+  isShort?: boolean;
+  isLive?: boolean;
 }
 
 export type TextTracks = {
@@ -61,6 +71,18 @@ export interface Info {
   rating?: string;
   linkList: Link[];
   webUrl?: string;
+  // Structured video metadata (see Post). `related` holds the "up next" /
+  // related videos shown under a player.
+  videoId?: string;
+  channelName?: string;
+  channelAvatar?: string;
+  views?: string;
+  publishedTime?: string;
+  duration?: string;
+  likes?: string;
+  aspectRatio?: number;
+  isShort?: boolean;
+  related?: Post[];
 }
 // getEpisodeLinks
 export interface EpisodeLink {

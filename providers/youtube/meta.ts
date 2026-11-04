@@ -1,45 +1,17 @@
-import { Info, ProviderContext } from "../types";
-
-const defaultHeaders = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-  "Accept-Language": "en-US,en;q=0.9",
-};
-
-function extractVideoId(link: string): string {
-  const match =
-    link.match(/(?:v=|\/watch\?v=|\/embed\/|\/v\/|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/i) ||
-    link.match(/([a-zA-Z0-9_-]{11})/);
-  return match ? match[1] : link;
-}
-
-function formatViews(rawCount: number | string): string {
-  const num = typeof rawCount === "number" ? rawCount : parseInt(rawCount, 10);
-  if (isNaN(num) || num <= 0) return "";
-  if (num >= 1000000000) {
-    return (num / 1000000000).toFixed(1).replace(/\.0$/, "") + "B views";
-  }
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1).replace(/\.0$/, "") + "M views";
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1).replace(/\.0$/, "") + "K views";
-  }
-  return num.toLocaleString() + " views";
-}
-
-function formatDuration(totalSeconds: number | string): string {
-  const sec = typeof totalSeconds === "number" ? totalSeconds : parseInt(totalSeconds, 10);
-  if (isNaN(sec) || sec <= 0) return "";
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  const h = Math.floor(m / 60);
-  const remM = m % 60;
-  if (h > 0) {
-    return `${h}:${remM.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  }
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
+import { Info, Post, ProviderContext } from "../types";
+import {
+  YT_HEADERS as defaultHeaders,
+  collectVideos,
+  extractVideoId,
+  findFirst,
+  formatDuration,
+  formatViews,
+  landscapeThumb,
+  parseInitialData,
+  pickImage,
+  relativeTime,
+  watchUrl as buildWatchUrl,
+} from "./parse";
 
 export const getMeta = async function ({
   link,
@@ -51,7 +23,8 @@ export const getMeta = async function ({
   const { axios, cheerio } = providerContext;
 
   const videoId = extractVideoId(link);
-  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const watchUrl = buildWatchUrl(videoId);
+  const isShort = /\/shorts\//i.test(link);
 
   try {
     const res = await axios.get(watchUrl, { headers: defaultHeaders });
@@ -77,6 +50,8 @@ export const getMeta = async function ({
     let publishDateStr = "";
     let category = "";
     let likes = "";
+    let publishedTime = "";
+    let channelAvatar = "";
 
     // 1. Parse ytInitialPlayerResponse for video details & microformat
     const prMatch =
@@ -113,6 +88,7 @@ export const getMeta = async function ({
                 month: "short",
                 day: "numeric",
               });
+              publishedTime = relativeTime(dateObj.toISOString());
             }
           }
         }
@@ -153,6 +129,17 @@ export const getMeta = async function ({
       }
     }
 
+    // 3. Channel avatar and related videos, from the same ytInitialData.
+    let related: Post[] = [];
+    const initialData = parseInitialData(res.data);
+    if (initialData) {
+      const owner = findFirst(initialData, "videoOwnerRenderer");
+      channelAvatar = pickImage(owner?.thumbnail);
+      related = collectVideos(initialData, "videos")
+        .filter((v) => v.videoId !== videoId)
+        .slice(0, 20);
+    }
+
     // Fallback regex for likes
     if (!likes) {
       const regexMatch = res.data.match(/"iconName":"LIKE"[^}]*?"title":"([^"]+)"/);
@@ -168,7 +155,7 @@ export const getMeta = async function ({
     if (category) tags.push(category);
 
     // High quality landscape image (16:9)
-    const landscapeImage = `https://i.ytimg.com/vi/${videoId}/hq720.jpg`;
+    const landscapeImage = landscapeThumb(videoId);
     const fallbackImage = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
     return {
@@ -196,6 +183,17 @@ export const getMeta = async function ({
         },
       ],
       webUrl: watchUrl,
+      // Structured fields for the YouTube layout.
+      videoId,
+      channelName: channel || undefined,
+      channelAvatar: channelAvatar || undefined,
+      views: formattedViewCount || undefined,
+      publishedTime: publishedTime || undefined,
+      duration: durationStr || undefined,
+      likes: likes || undefined,
+      aspectRatio: isShort ? 9 / 16 : 16 / 9,
+      isShort,
+      related,
     };
   } catch (err) {
     console.error("YouTube getMeta error:", err);
@@ -221,6 +219,10 @@ export const getMeta = async function ({
         },
       ],
       webUrl: watchUrl,
+      videoId,
+      aspectRatio: isShort ? 9 / 16 : 16 / 9,
+      isShort,
+      related: [],
     };
   }
 };
