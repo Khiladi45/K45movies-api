@@ -1,13 +1,16 @@
-import { Info, Post, ProviderContext } from "../types";
+import { Comment, Info, Post, ProviderContext } from "../types";
 import {
   YT_HEADERS as defaultHeaders,
   collectVideos,
+  extractCommentsToken,
+  extractInnertubeConfig,
   extractVideoId,
   findFirst,
   formatDuration,
   formatViews,
   landscapeThumb,
   parseInitialData,
+  parseComments,
   pickImage,
   relativeTime,
   watchUrl as buildWatchUrl,
@@ -224,5 +227,81 @@ export const getMeta = async function ({
       isShort,
       related: [],
     };
+  }
+};
+
+/**
+ * One page of top-level comments for a video or Short.
+ *
+ * Without `continuation` the watch page is read to find the first token (a
+ * /shorts/ link works too: Shorts have a regular watch page). The returned
+ * `continuation` loads the next page. Never throws.
+ */
+export const getComments = async function ({
+  link,
+  continuation,
+  signal,
+  providerContext,
+}: {
+  link: string;
+  continuation?: string;
+  signal?: AbortSignal;
+  providerContext: ProviderContext;
+}): Promise<{ comments: Comment[]; count: string; continuation?: string }> {
+  const empty = { comments: [] as Comment[], count: "", continuation: undefined };
+  const { axios } = providerContext;
+
+  try {
+    let token = continuation;
+    let config = extractInnertubeConfig("");
+
+    if (!token) {
+      const videoId = extractVideoId(link);
+      const page = await axios.get(buildWatchUrl(videoId), {
+        headers: defaultHeaders,
+        signal,
+      });
+      config = extractInnertubeConfig(page.data);
+      const initialData = parseInitialData(page.data);
+      token = initialData ? extractCommentsToken(initialData) : undefined;
+    }
+    if (!token) return empty;
+
+    const apiKey = config.apiKey ? `&key=${encodeURIComponent(config.apiKey)}` : "";
+    const res = await axios.post(
+      `https://www.youtube.com/youtubei/v1/next?prettyPrint=false${apiKey}`,
+      {
+        context: {
+          client: {
+            clientName: "WEB",
+            clientVersion: config.clientVersion,
+            hl: "en",
+            gl: "US",
+          },
+        },
+        continuation: token,
+      },
+      {
+        headers: {
+          ...defaultHeaders,
+          "Content-Type": "application/json",
+          "X-YouTube-Client-Name": "1",
+          "X-YouTube-Client-Version": config.clientVersion,
+          Origin: "https://www.youtube.com",
+        },
+        timeout: 8000,
+        signal,
+      },
+    );
+
+    const parsed = parseComments(res.data);
+    return {
+      comments: parsed.comments,
+      count: parsed.count,
+      continuation: parsed.continuation,
+    };
+  } catch (err) {
+    console.error("YouTube getComments error:", err);
+    return empty;
   }
 };
