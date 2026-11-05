@@ -29,6 +29,19 @@ export interface Post {
   isLive?: boolean;
 }
 
+// getComments (video providers): one top-level comment.
+export interface Comment {
+  id: string;
+  author: string;
+  authorAvatar?: string;
+  text: string;
+  publishedTime: string; // e.g. "2 weeks ago"
+  likes: string; // e.g. "4.1K"; empty when none
+  replyCount: string; // e.g. "11"; empty when none
+  // Pass to getComments({ continuation }) to load this comment's replies.
+  replyToken?: string;
+}
+
 export type TextTracks = {
   title: string;
   language: string;

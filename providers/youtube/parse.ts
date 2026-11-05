@@ -1,4 +1,4 @@
-import { Post } from "../types";
+import { Comment, Post } from "../types";
 
 // Shared YouTube parsing helpers used by posts.ts and meta.ts.
 //
@@ -377,4 +377,341 @@ export function paginate<T>(items: T[], page: number, pageSize = 20): T[] {
   const start = (page - 1) * pageSize;
   if (start >= items.length) return items.slice(0, pageSize);
   return items.slice(start, start + pageSize);
+}
+
+// ---------------------------------------------------------------------------
+// Continuation paging (search / feed)
+// ---------------------------------------------------------------------------
+
+export const FALLBACK_CLIENT_VERSION = "2.20260101.00.00";
+
+export interface InnertubeConfig {
+  apiKey?: string;
+  clientVersion: string;
+}
+
+/** Reads INNERTUBE_API_KEY / INNERTUBE_CLIENT_VERSION from a YouTube page. */
+export function extractInnertubeConfig(html: unknown): InnertubeConfig {
+  const text = typeof html === "string" ? html : "";
+  return {
+    apiKey: text.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/)?.[1],
+    clientVersion:
+      text.match(/"INNERTUBE_CLIENT_VERSION"\s*:\s*"([^"]+)"/)?.[1] ||
+      FALLBACK_CLIENT_VERSION,
+  };
+}
+
+function tokenOf(renderer: any): string | undefined {
+  const token =
+    renderer?.continuationEndpoint?.continuationCommand?.token ||
+    renderer?.button?.buttonRenderer?.command?.continuationCommand?.token;
+  return typeof token === "string" && token ? token : undefined;
+}
+
+/**
+ * The token that loads the NEXT page of a results tree: the last
+ * continuationItemRenderer in document order. Works for the first HTML page
+ * (ytInitialData) and for continuation responses alike.
+ */
+export function extractContinuationToken(data: any): string | undefined {
+  let last: string | undefined;
+  const walk = (obj: any) => {
+    if (!obj || typeof obj !== "object") return;
+    if (obj.continuationItemRenderer) {
+      const token = tokenOf(obj.continuationItemRenderer);
+      if (token) last = token;
+    }
+    for (const key of Object.keys(obj)) walk(obj[key]);
+  };
+  walk(data);
+  return last;
+}
+
+/** Videos and next-page token from a youtubei/v1/search continuation response. */
+export function parseContinuationResponse(
+  data: any,
+  mode: ExtractMode,
+): { posts: Post[]; continuation?: string } {
+  return {
+    posts: collectVideos(data, mode),
+    continuation: extractContinuationToken(data),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Search suggestions
+// ---------------------------------------------------------------------------
+
+/** `["q",["s1","s2"]]` (string or already-parsed) -> up to `max` clean strings. */
+export function parseSuggestions(raw: unknown, max = 10): string[] {
+  let data: any = raw;
+  if (typeof raw === "string") {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  const list = Array.isArray(data) && Array.isArray(data[1]) ? data[1] : [];
+  const out: string[] = [];
+  for (const item of list) {
+    const text = (Array.isArray(item) ? item[0] : item) as unknown;
+    if (typeof text !== "string") continue;
+    const clean = text.trim();
+    if (clean && !out.includes(clean)) out.push(clean);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+
+export interface ParsedComments {
+  comments: Comment[];
+  count: string;
+  continuation?: string;
+}
+
+/** Token that loads the first page of comments from a watch page's ytInitialData. */
+export function extractCommentsToken(data: any): string | undefined {
+  let found: string | undefined;
+
+  const fromSection = (section: any) => {
+    const contents: any[] = Array.isArray(section?.contents) ? section.contents : [];
+    for (const item of contents) {
+      const token = tokenOf(item?.continuationItemRenderer);
+      if (token) return token;
+    }
+    return undefined;
+  };
+
+  const walk = (obj: any) => {
+    if (found || !obj || typeof obj !== "object") return;
+    const section = obj.itemSectionRenderer;
+    if (section?.sectionIdentifier === "comment-item-section") {
+      found = fromSection(section);
+      if (found) return;
+    }
+    for (const key of Object.keys(obj)) walk(obj[key]);
+  };
+  walk(data);
+  if (found) return found;
+
+  // Fallback: the comments engagement panel.
+  const panels: any[] = Array.isArray(data?.engagementPanels) ? data.engagementPanels : [];
+  for (const panel of panels) {
+    const body = panel?.engagementPanelSectionListRenderer;
+    if (body?.panelIdentifier === "engagement-panel-comments-section") {
+      const token = extractContinuationToken(body);
+      if (token) return token;
+    }
+  }
+  return undefined;
+}
+
+function commentFromEntity(payload: any, fallbackId: string): Comment | null {
+  const props = payload?.properties;
+  const text = textOf(props?.content);
+  if (!text) return null;
+  const toolbar = payload?.toolbar;
+  return {
+    id: String(props?.commentId || fallbackId),
+    author: String(payload?.author?.displayName || "").trim(),
+    authorAvatar: payload?.author?.avatarThumbnailUrl || undefined,
+    text,
+    publishedTime: String(props?.publishedTime || "").trim(),
+    likes: String(toolbar?.likeCountNotliked || toolbar?.likeCountLiked || "").trim(),
+    replyCount: String(toolbar?.replyCount || "").trim(),
+  };
+}
+
+function commentFromRenderer(cr: any): Comment | null {
+  const text = textOf(cr?.contentText);
+  if (!text) return null;
+  const replies = cr?.replyCount;
+  return {
+    id: String(cr?.commentId || ""),
+    author: textOf(cr?.authorText).trim(),
+    authorAvatar: pickImage(cr?.authorThumbnail) || undefined,
+    text,
+    publishedTime: textOf(cr?.publishedTimeText).trim(),
+    likes: String(textOf(cr?.voteCount) || cr?.likeCount || "").trim(),
+    replyCount: replies ? String(replies) : "",
+  };
+}
+
+/**
+ * Comments from a youtubei/v1/next response. Handles the legacy
+ * commentThreadRenderer.comment.commentRenderer shape and the current
+ * commentViewModel shape joined with frameworkUpdates' commentEntityPayload.
+ */
+export function parseComments(data: any): ParsedComments {
+  const entities = new Map<string, any>();
+  const mutations: any[] = Array.isArray(
+    data?.frameworkUpdates?.entityBatchUpdate?.mutations,
+  )
+    ? data.frameworkUpdates.entityBatchUpdate.mutations
+    : [];
+  for (const mutation of mutations) {
+    const payload = mutation?.payload?.commentEntityPayload;
+    const id = payload?.properties?.commentId;
+    if (payload && id) entities.set(String(id), payload);
+  }
+
+  const comments: Comment[] = [];
+  const seen = new Set<string>();
+  let continuation: string | undefined;
+
+  const walk = (obj: any) => {
+    if (!obj || typeof obj !== "object") return;
+
+    if (Array.isArray(obj)) {
+      // The list holding the threads also holds the "load more" item last.
+      const hasThread = obj.some(
+        (item) => item?.commentThreadRenderer || item?.commentViewModel,
+      );
+      if (hasThread) {
+        const tail = obj[obj.length - 1]?.continuationItemRenderer;
+        const token = tokenOf(tail);
+        if (token) continuation = token;
+      }
+    }
+
+    const thread = obj.commentThreadRenderer;
+    if (thread) {
+      const vm = thread.commentViewModel?.commentViewModel;
+      let comment: Comment | null = null;
+      if (vm) {
+        const id = String(vm.commentId || "");
+        comment = commentFromEntity(entities.get(id), id);
+      } else if (thread.comment?.commentRenderer) {
+        comment = commentFromRenderer(thread.comment.commentRenderer);
+      }
+      if (comment && !seen.has(comment.id || comment.text)) {
+        seen.add(comment.id || comment.text);
+        // Token that loads this comment's replies (via the same continuation call).
+        const replyItems: any[] = Array.isArray(
+          thread.replies?.commentRepliesRenderer?.contents,
+        )
+          ? thread.replies.commentRepliesRenderer.contents
+          : [];
+        for (const item of replyItems) {
+          const replyToken = tokenOf(item?.continuationItemRenderer);
+          if (replyToken) {
+            comment.replyToken = replyToken;
+            break;
+          }
+        }
+        comments.push(comment);
+      }
+      return; // never descend into replies
+    }
+
+    // A page of replies: bare commentViewModel items, joined with the entities.
+    const bare = obj.commentViewModel;
+    if (bare && typeof bare === "object") {
+      const vm = bare.commentViewModel || bare;
+      const id = String(vm?.commentId || "");
+      const comment = id ? commentFromEntity(entities.get(id), id) : null;
+      if (comment && !seen.has(comment.id)) {
+        seen.add(comment.id);
+        comments.push(comment);
+      }
+      return;
+    }
+
+    for (const key of Object.keys(obj)) walk(obj[key]);
+  };
+  walk(data);
+
+  let count = "";
+  const header = findFirst(data, "commentsHeaderRenderer");
+  if (header) {
+    count = textOf(header.countText).replace(/\s*comments?\s*$/i, "").trim();
+  }
+  if (!count) {
+    const entry = findFirst(data, "commentsEntryPointHeaderRenderer");
+    count = textOf(entry?.commentCount).trim();
+  }
+
+  return { comments, count, continuation };
+}
+
+// ---------------------------------------------------------------------------
+// HLS master playlist variants
+// ---------------------------------------------------------------------------
+
+export interface HlsVariant {
+  height: number;
+  bandwidth: number;
+  url: string;
+  /** True when the variant's audio lives in a separate #EXT-X-MEDIA playlist. */
+  separateAudio: boolean;
+}
+
+export function resolveUrl(base: string, relative: string): string {
+  if (/^https?:\/\//i.test(relative)) return relative;
+  try {
+    return new URL(relative, base).toString();
+  } catch {
+    return relative;
+  }
+}
+
+function attr(line: string, name: string): string {
+  const quoted = line.match(new RegExp(`(?:^|[,:])${name}="([^"]*)"`));
+  if (quoted) return quoted[1];
+  const plain = line.match(new RegExp(`(?:^|[,:])${name}=([^,"]+)`));
+  return plain ? plain[1] : "";
+}
+
+/**
+ * One entry per unique height (highest bandwidth wins), tallest first. Height is
+ * the shorter side of RESOLUTION so portrait Shorts (1080x1920) read as 1080p.
+ */
+export function parseHlsVariants(text: string, baseUrl: string): HlsVariant[] {
+  const lines = (text || "").split(/\r?\n/).map((l) => l.trim());
+
+  const audioGroupsWithUri = new Set<string>();
+  for (const line of lines) {
+    if (!line.startsWith("#EXT-X-MEDIA")) continue;
+    if (attr(line, "TYPE") === "AUDIO" && attr(line, "URI")) {
+      audioGroupsWithUri.add(attr(line, "GROUP-ID"));
+    }
+  }
+
+  const byHeight = new Map<number, HlsVariant>();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.startsWith("#EXT-X-STREAM-INF")) continue;
+
+    const res = attr(line, "RESOLUTION").match(/^(\d+)x(\d+)$/);
+    if (!res) continue;
+    const height = Math.min(Number(res[1]), Number(res[2]));
+    if (!height) continue;
+
+    let uri = "";
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j] && !lines[j].startsWith("#")) {
+        uri = lines[j];
+        break;
+      }
+    }
+    if (!uri) continue;
+
+    const bandwidth = parseInt(attr(line, "BANDWIDTH") || "0", 10) || 0;
+    const audioGroup = attr(line, "AUDIO");
+    const variant: HlsVariant = {
+      height,
+      bandwidth,
+      url: resolveUrl(baseUrl, uri),
+      separateAudio: !!audioGroup && audioGroupsWithUri.has(audioGroup),
+    };
+    const existing = byHeight.get(height);
+    if (!existing || bandwidth > existing.bandwidth) byHeight.set(height, variant);
+  }
+
+  return [...byHeight.values()].sort((a, b) => b.height - a.height);
 }

@@ -1,4 +1,5 @@
 import { Stream, ProviderContext, TextTracks } from "../types";
+import { parseHlsVariants } from "./parse";
 
 function extractVideoId(link: string): string {
   const match =
@@ -6,17 +7,6 @@ function extractVideoId(link: string): string {
     link.match(/([a-zA-Z0-9_-]{11})/);
   return match ? match[1] : link;
 }
-
-const QUALITY_ORDER: Record<string, number> = {
-  "2160": 1,
-  "1440": 2,
-  "1080": 3,
-  "720": 4,
-  "480": 5,
-  "360": 6,
-  "240": 7,
-  "144": 8,
-};
 
 async function getVisitorData(axios: any, kvStore: any): Promise<string> {
   const fallback =
@@ -160,16 +150,40 @@ async function fetchFromInnerTube(
     const vData = visionRes.status === "fulfilled" ? visionRes.value?.data : null;
     const vrData = vrRes.status === "fulfilled" ? vrRes.value?.data : null;
 
-    // 1. Master HLS (Multi-Quality adaptive stream with audio)
+    // 1. Master HLS (adaptive, with audio). Played as-is by the app, which can
+    //    pin a resolution on it; the per-height variants below are for the
+    //    quality picker and for downloads.
     const masterUrl = vData?.streamingData?.hlsManifestUrl;
     if (masterUrl) {
       streams.push({
-        server: "YouTube HLS (Multi-Quality)",
+        server: "YouTube HLS (Auto)",
         link: masterUrl,
         type: "m3u8",
-        quality: "1080",
+        quality: "auto",
         tag: "Audio + Video",
       });
+
+      try {
+        const playlist = await axios.get(masterUrl, {
+          responseType: "text",
+          timeout: 5000,
+          signal,
+        });
+        const text = typeof playlist?.data === "string" ? playlist.data : "";
+        for (const v of parseHlsVariants(text, masterUrl)) {
+          streams.push({
+            server: `YouTube HLS ${v.height}p`,
+            link: v.url,
+            type: "m3u8",
+            quality: String(v.height),
+            tag: v.separateAudio
+              ? "HLS variant \u2022 Video only"
+              : "HLS variant \u2022 Audio + Video",
+          });
+        }
+      } catch {
+        // The master alone still plays; only the per-height list is lost.
+      }
     }
 
     // 2. Progressive MP4 (Audio + Video muxed)
@@ -196,41 +210,50 @@ async function fetchFromInnerTube(
   return { streams, subtitles };
 }
 
+const isMaster = (s: Stream) => s.quality === "auto";
+const isVariant = (s: Stream) =>
+  s.type === "m3u8" && !isMaster(s) && !!s.tag?.startsWith("HLS variant");
+const isVideoOnly = (s: Stream) => !!s.tag?.includes("Video only");
+const heightOf = (s: Stream) => parseInt(s.quality || "", 10) || 0;
+
+/** Streaming: master first, then variants tallest first, then muxed MP4s. */
+function rankForStreaming(s: Stream): number {
+  if (isMaster(s)) return 0;
+  if (isVariant(s)) return 1;
+  return 2;
+}
+
+/** Downloads: muxed MP4 and audio+video variants first, video-only last. */
+function rankForDownload(s: Stream): number {
+  if (isMaster(s)) return 3;
+  if (isVideoOnly(s)) return 2;
+  return s.type === "mp4" ? 0 : 1;
+}
+
 function sortStreams(
   streams: Stream[],
   preferredQuality?: string,
   isDownload?: boolean
 ) {
+  const cleanPref =
+    preferredQuality && preferredQuality !== "auto"
+      ? preferredQuality.replace("p", "")
+      : "";
+
   streams.sort((a, b) => {
-    // 1. If downloading, prefer standalone MP4 if available
-    if (isDownload) {
-      const aIsMp4 = a.type === "mp4";
-      const bIsMp4 = b.type === "mp4";
-      if (aIsMp4 && !bIsMp4) return -1;
-      if (!aIsMp4 && bIsMp4) return 1;
-    }
+    const rank = isDownload ? rankForDownload : rankForStreaming;
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
 
-    // 2. If streaming, prioritize adaptive HLS
-    if (!isDownload) {
-      const aIsHls = a.server.includes("Multi-Quality") || a.type === "m3u8";
-      const bIsHls = b.server.includes("Multi-Quality") || b.type === "m3u8";
-      if (aIsHls && !bIsHls) return -1;
-      if (!aIsHls && bIsHls) return 1;
-    }
-
-    // 3. Match preferred quality
-    if (preferredQuality && preferredQuality !== "auto") {
-      const cleanPref = preferredQuality.replace("p", "");
+    // A preferred height wins within the same rank.
+    if (cleanPref) {
       const aMatches = a.quality === cleanPref;
       const bMatches = b.quality === cleanPref;
       if (aMatches && !bMatches) return -1;
       if (!aMatches && bMatches) return 1;
     }
 
-    // 4. Default quality order
-    const orderA = QUALITY_ORDER[a.quality || ""] || 99;
-    const orderB = QUALITY_ORDER[b.quality || ""] || 99;
-    return orderA - orderB;
+    // Tallest first; "auto" (height 0) never outranks a real height.
+    return heightOf(b) - heightOf(a);
   });
 }
 
