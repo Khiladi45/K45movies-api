@@ -62,7 +62,8 @@ async function fetchFromInnerTube(
   axios: any,
   kvStore: any,
   videoId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  fast = false
 ): Promise<{ streams: Stream[]; subtitles: TextTracks }> {
   const streams: Stream[] = [];
   let subtitles: TextTracks = [];
@@ -163,7 +164,9 @@ async function fetchFromInnerTube(
         tag: "Audio + Video",
       });
 
-      try {
+      // `fast` (playback start-up) skips the per-height list: the master plays
+      // as-is and the list is only needed for the quality menu and downloads.
+      if (!fast) try {
         const playlist = await axios.get(masterUrl, {
           responseType: "text",
           timeout: 5000,
@@ -201,6 +204,53 @@ async function fetchFromInnerTube(
       }
     }
 
+    // 2b. Adaptive MP4: separate video-only and audio-only files (1080p-4K).
+    //     They are not playable alone; the app downloads one of each and joins
+    //     them (see the app's mp4Mux). ANDROID_VR URLs come first so they win
+    //     when both clients return the same itag.
+    const vrUa =
+      "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
+    const adaptive: any[] = [
+      ...(vrData?.streamingData?.adaptiveFormats || []),
+      ...(vData?.streamingData?.adaptiveFormats || []),
+    ];
+    const seenItag = new Set<number>();
+    for (const f of adaptive) {
+      const mime = String(f?.mimeType || "");
+      if (!f?.url || !/^(video|audio)\/mp4/.test(mime) || seenItag.has(f.itag)) continue;
+      seenItag.add(f.itag);
+      const codec = (mime.match(/codecs="([^"]+)"/)?.[1] || "").split(".")[0];
+      const size = Number(f.contentLength) || undefined;
+      const bitrate = Math.round((Number(f.averageBitrate || f.bitrate) || 0) / 1000);
+      if (mime.startsWith("video/") && f.height) {
+        streams.push({
+          server: `YouTube ${f.height}p ${codec} (video)`,
+          link: f.url,
+          type: "mp4",
+          quality: String(f.height),
+          tag: `Video only \u2022 ${codec}`,
+          kind: "video",
+          size,
+          codec,
+          bitrate,
+          headers: { "User-Agent": vrUa },
+        });
+      } else if (mime.startsWith("audio/")) {
+        streams.push({
+          server: `YouTube audio ${bitrate}k (${codec})`,
+          link: f.url,
+          type: "mp4",
+          quality: "audio",
+          tag: `Audio only \u2022 ${codec}`,
+          kind: "audio",
+          size,
+          codec,
+          bitrate,
+          headers: { "User-Agent": vrUa },
+        });
+      }
+    }
+
     // 3. Subtitles
     subtitles = extractCaptions(vData) || extractCaptions(vrData) || [];
   } catch {
@@ -220,12 +270,14 @@ const heightOf = (s: Stream) => parseInt(s.quality || "", 10) || 0;
 function rankForStreaming(s: Stream): number {
   if (isMaster(s)) return 0;
   if (isVariant(s)) return 1;
-  return 2;
+  // Single-track files are for downloads; keep them after anything playable.
+  return s.kind ? 3 : 2;
 }
 
 /** Downloads: muxed MP4 and audio+video variants first, video-only last. */
 function rankForDownload(s: Stream): number {
   if (isMaster(s)) return 3;
+  if (s.kind) return 2;
   if (isVideoOnly(s)) return 2;
   return s.type === "mp4" ? 0 : 1;
 }
@@ -262,12 +314,14 @@ export const getStream = async function ({
   signal,
   providerContext,
   isDownload,
+  fast,
 }: {
   link: string;
   type: string;
   signal: AbortSignal;
   providerContext: ProviderContext;
   isDownload?: boolean;
+  fast?: boolean;
 }): Promise<Stream[]> {
   const { axios, kvStore } = providerContext;
 
@@ -279,7 +333,8 @@ export const getStream = async function ({
     axios,
     kvStore,
     videoId,
-    signal
+    signal,
+    !!fast && !isDownload
   );
 
   if (streams.length === 0) {

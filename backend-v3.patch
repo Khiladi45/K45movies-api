@@ -1,0 +1,169 @@
+diff --git a/providers/types.ts b/providers/types.ts
+index caf5b0d..4b588a5 100644
+--- a/providers/types.ts
++++ b/providers/types.ts
+@@ -66,6 +66,11 @@ export interface Stream {
+   subtitles?: TextTracks;
+   headers?: any;
+   skip?: SkipInterval[];
++  /** Adaptive (single-track) MP4 files: which track, byte size, codec, kbps. */
++  kind?: "video" | "audio";
++  size?: number;
++  codec?: string;
++  bitrate?: number;
+ }
+ 
+ // getInfo
+diff --git a/providers/youtube/stream.ts b/providers/youtube/stream.ts
+index 57285a6..061e685 100644
+--- a/providers/youtube/stream.ts
++++ b/providers/youtube/stream.ts
+@@ -62,7 +62,8 @@ async function fetchFromInnerTube(
+   axios: any,
+   kvStore: any,
+   videoId: string,
+-  signal?: AbortSignal
++  signal?: AbortSignal,
++  fast = false
+ ): Promise<{ streams: Stream[]; subtitles: TextTracks }> {
+   const streams: Stream[] = [];
+   let subtitles: TextTracks = [];
+@@ -163,7 +164,9 @@ async function fetchFromInnerTube(
+         tag: "Audio + Video",
+       });
+ 
+-      try {
++      // `fast` (playback start-up) skips the per-height list: the master plays
++      // as-is and the list is only needed for the quality menu and downloads.
++      if (!fast) try {
+         const playlist = await axios.get(masterUrl, {
+           responseType: "text",
+           timeout: 5000,
+@@ -201,6 +204,53 @@ async function fetchFromInnerTube(
+       }
+     }
+ 
++    // 2b. Adaptive MP4: separate video-only and audio-only files (1080p-4K).
++    //     They are not playable alone; the app downloads one of each and joins
++    //     them (see the app's mp4Mux). ANDROID_VR URLs come first so they win
++    //     when both clients return the same itag.
++    const vrUa =
++      "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
++    const adaptive: any[] = [
++      ...(vrData?.streamingData?.adaptiveFormats || []),
++      ...(vData?.streamingData?.adaptiveFormats || []),
++    ];
++    const seenItag = new Set<number>();
++    for (const f of adaptive) {
++      const mime = String(f?.mimeType || "");
++      if (!f?.url || !/^(video|audio)\/mp4/.test(mime) || seenItag.has(f.itag)) continue;
++      seenItag.add(f.itag);
++      const codec = (mime.match(/codecs="([^"]+)"/)?.[1] || "").split(".")[0];
++      const size = Number(f.contentLength) || undefined;
++      const bitrate = Math.round((Number(f.averageBitrate || f.bitrate) || 0) / 1000);
++      if (mime.startsWith("video/") && f.height) {
++        streams.push({
++          server: `YouTube ${f.height}p ${codec} (video)`,
++          link: f.url,
++          type: "mp4",
++          quality: String(f.height),
++          tag: `Video only \u2022 ${codec}`,
++          kind: "video",
++          size,
++          codec,
++          bitrate,
++          headers: { "User-Agent": vrUa },
++        });
++      } else if (mime.startsWith("audio/")) {
++        streams.push({
++          server: `YouTube audio ${bitrate}k (${codec})`,
++          link: f.url,
++          type: "mp4",
++          quality: "audio",
++          tag: `Audio only \u2022 ${codec}`,
++          kind: "audio",
++          size,
++          codec,
++          bitrate,
++          headers: { "User-Agent": vrUa },
++        });
++      }
++    }
++
+     // 3. Subtitles
+     subtitles = extractCaptions(vData) || extractCaptions(vrData) || [];
+   } catch {
+@@ -220,12 +270,14 @@ const heightOf = (s: Stream) => parseInt(s.quality || "", 10) || 0;
+ function rankForStreaming(s: Stream): number {
+   if (isMaster(s)) return 0;
+   if (isVariant(s)) return 1;
+-  return 2;
++  // Single-track files are for downloads; keep them after anything playable.
++  return s.kind ? 3 : 2;
+ }
+ 
+ /** Downloads: muxed MP4 and audio+video variants first, video-only last. */
+ function rankForDownload(s: Stream): number {
+   if (isMaster(s)) return 3;
++  if (s.kind) return 2;
+   if (isVideoOnly(s)) return 2;
+   return s.type === "mp4" ? 0 : 1;
+ }
+@@ -262,12 +314,14 @@ export const getStream = async function ({
+   signal,
+   providerContext,
+   isDownload,
++  fast,
+ }: {
+   link: string;
+   type: string;
+   signal: AbortSignal;
+   providerContext: ProviderContext;
+   isDownload?: boolean;
++  fast?: boolean;
+ }): Promise<Stream[]> {
+   const { axios, kvStore } = providerContext;
+ 
+@@ -279,7 +333,8 @@ export const getStream = async function ({
+     axios,
+     kvStore,
+     videoId,
+-    signal
++    signal,
++    !!fast && !isDownload
+   );
+ 
+   if (streams.length === 0) {
+diff --git a/tests/youtube-flow.test.cjs b/tests/youtube-flow.test.cjs
+index ae9e73b..802e6e4 100644
+--- a/tests/youtube-flow.test.cjs
++++ b/tests/youtube-flow.test.cjs
+@@ -126,5 +126,28 @@ const ids = (list) => list.map((x) => x.videoId);
+   const noMaster = await stream.getStream({ link: "dQw4w9WgXcQ", type: "movie", signal: undefined, providerContext: { ...sctx2, axios: { get: sctx2.axios.get, post: async (u, b) => b.context.client.clientName === "VISIONOS" ? { data: {} } : sctx2.axios.post(u, b) } } });
+   assert.deepStrictEqual(noMaster.map((s) => s.type), ["mp4"]);
+ 
++  // Adaptive MP4: video-only + audio-only files are listed, but never ahead of playable streams.
++  const adaptiveFormats = [
++    { itag: 401, url: "https://v/401", mimeType: 'video/mp4; codecs="av01.0.12M.08"', height: 2160, contentLength: "5000", averageBitrate: 14000000 },
++    { itag: 137, url: "https://v/137", mimeType: 'video/mp4; codecs="avc1.640028"', height: 1080, contentLength: "3000" },
++    { itag: 248, url: "https://v/248", mimeType: 'video/webm; codecs="vp9"', height: 1080 },
++    { itag: 140, url: "https://v/140", mimeType: 'audio/mp4; codecs="mp4a.40.2"', contentLength: "800", averageBitrate: 130000 },
++  ];
++  const actx = { kvStore: undefined, axios: { get: sctx2.axios.get,
++    post: async (u, b) => b.context.client.clientName === "VISIONOS" ? { data: {} }
++      : { data: { streamingData: { formats: [{ url: "https://v/18.mp4", qualityLabel: "360p" }], adaptiveFormats } } } } };
++  const ad = await stream.getStream({ link: "dQw4w9WgXcQ", type: "movie", signal: undefined, providerContext: actx });
++  assert.strictEqual(ad[0].kind, undefined, "playable stream first");
++  const vids = ad.filter((s) => s.kind === "video");
++  assert.deepStrictEqual(vids.map((s) => s.quality + ":" + s.codec + ":" + s.size), ["2160:av01:5000", "1080:avc1:3000"]);
++  assert.strictEqual(ad.filter((s) => s.kind === "audio").length, 1);
++  assert.ok(!ad.some((s) => s.link === "https://v/248"), "webm skipped");
++
++  // fast: no per-height playlist request, master still first.
++  let playlistCalls = 0;
++  const fctx = { ...sctx2, axios: { ...sctx2.axios, get: async (u, c) => { if (/\.m3u8/.test(u) || /manifest/.test(u)) playlistCalls++; return sctx2.axios.get(u, c); }, post: sctx2.axios.post } };
++  const fastRes = await stream.getStream({ link: "dQw4w9WgXcQ", type: "movie", signal: undefined, providerContext: fctx, fast: true });
++  assert.ok(fastRes.length > 0 && playlistCalls === 0, "fast skips the playlist fetch");
++
+   console.log("youtube flow tests passed");
+ })().catch((e) => { console.error(e); process.exit(1); });
