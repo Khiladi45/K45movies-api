@@ -126,5 +126,28 @@ const ids = (list) => list.map((x) => x.videoId);
   const noMaster = await stream.getStream({ link: "dQw4w9WgXcQ", type: "movie", signal: undefined, providerContext: { ...sctx2, axios: { get: sctx2.axios.get, post: async (u, b) => b.context.client.clientName === "VISIONOS" ? { data: {} } : sctx2.axios.post(u, b) } } });
   assert.deepStrictEqual(noMaster.map((s) => s.type), ["mp4"]);
 
+  // Adaptive MP4: video-only + audio-only files are listed, but never ahead of playable streams.
+  const adaptiveFormats = [
+    { itag: 401, url: "https://v/401", mimeType: 'video/mp4; codecs="av01.0.12M.08"', height: 2160, contentLength: "5000", averageBitrate: 14000000 },
+    { itag: 137, url: "https://v/137", mimeType: 'video/mp4; codecs="avc1.640028"', height: 1080, contentLength: "3000" },
+    { itag: 248, url: "https://v/248", mimeType: 'video/webm; codecs="vp9"', height: 1080 },
+    { itag: 140, url: "https://v/140", mimeType: 'audio/mp4; codecs="mp4a.40.2"', contentLength: "800", averageBitrate: 130000 },
+  ];
+  const actx = { kvStore: undefined, axios: { get: sctx2.axios.get,
+    post: async (u, b) => b.context.client.clientName === "VISIONOS" ? { data: {} }
+      : { data: { streamingData: { formats: [{ url: "https://v/18.mp4", qualityLabel: "360p" }], adaptiveFormats } } } } };
+  const ad = await stream.getStream({ link: "dQw4w9WgXcQ", type: "movie", signal: undefined, providerContext: actx });
+  assert.strictEqual(ad[0].kind, undefined, "playable stream first");
+  const vids = ad.filter((s) => s.kind === "video");
+  assert.deepStrictEqual(vids.map((s) => s.quality + ":" + s.codec + ":" + s.size), ["2160:av01:5000", "1080:avc1:3000"]);
+  assert.strictEqual(ad.filter((s) => s.kind === "audio").length, 1);
+  assert.ok(!ad.some((s) => s.link === "https://v/248"), "webm skipped");
+
+  // fast: no per-height playlist request, master still first.
+  let playlistCalls = 0;
+  const fctx = { ...sctx2, axios: { ...sctx2.axios, get: async (u, c) => { if (/\.m3u8/.test(u) || /manifest/.test(u)) playlistCalls++; return sctx2.axios.get(u, c); }, post: sctx2.axios.post } };
+  const fastRes = await stream.getStream({ link: "dQw4w9WgXcQ", type: "movie", signal: undefined, providerContext: fctx, fast: true });
+  assert.ok(fastRes.length > 0 && playlistCalls === 0, "fast skips the playlist fetch");
+
   console.log("youtube flow tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

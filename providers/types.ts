@@ -66,6 +66,11 @@ export interface Stream {
   subtitles?: TextTracks;
   headers?: any;
   skip?: SkipInterval[];
+  /** Adaptive (single-track) MP4 files: which track, byte size, codec, kbps. */
+  kind?: "video" | "audio";
+  size?: number;
+  codec?: string;
+  bitrate?: number;
 }
 
 // getInfo
