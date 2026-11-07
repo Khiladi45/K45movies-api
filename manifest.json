@@ -1,11 +1,11 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-11-03T03:07:19Z",
+  "updatedAt": "2026-11-07T06:24:25Z",
   "providers": [
     {
       "id": "1flex",
-      "name": "1Flex",
-      "version": "1.0.5",
+      "name": "1flex",
+      "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/1flex.js",
       "icon": null
@@ -168,6 +168,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/movies4u.js",
+      "icon": null
+    },
+    {
+      "id": "moviesda",
+      "name": "Moviesda",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/moviesda.js",
       "icon": null
     },
     {
