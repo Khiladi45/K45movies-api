@@ -201,13 +201,13 @@ var init_utils = __esm({
       } catch (e) {
         url = href;
       }
-      return url.split("#")[0].replace(/&preview=1/, "").replace(/&do=[^&]*/, "").replace(/\/page\/\d+\/$/, "/");
+      return url.split("#")[0].replace(/&preview=1/, "").replace(/&do=[^&]*/, "").replace(/&comment=\d+/, "").replace(/\/page\/\d+\/$/, "/");
     };
     getQuality = (text) => {
-      const m = text.match(/\b(2160|1080|720|480|360)p?\b|\b(4k)\b/i);
-      if (!m) return void 0;
-      if (m[2]) return "2160";
-      return m[1];
+      const m = text.match(/(?:^|[^\d])(2160|1080|720|480|360)p?(?:[^\d]|$)/i);
+      if (m) return m[1];
+      if (/\b4k\b/i.test(text)) return "2160";
+      return void 0;
     };
     displayTitle = (releaseTitle) => {
       const stripped = cleanText(releaseTitle).replace(/^www\.[^ ]*?\s*[-–]\s*/i, "").replace(/^[-–|]\s*/, "");
@@ -251,30 +251,30 @@ __export(posts_exports, {
   getPosts: () => getPosts,
   getSearchPosts: () => getSearchPosts
 });
-function fetchText(url, signal) {
+function fetchText(axios, url, signal, headers) {
   return __async(this, null, function* () {
+    var _a;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     const onOuterAbort = () => controller.abort();
     signal == null ? void 0 : signal.addEventListener("abort", onOuterAbort);
     try {
-      const res = yield fetch(url, {
+      const res = yield axios.get(url, {
         signal: controller.signal,
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
+        headers,
+        timeout: REQUEST_TIMEOUT_MS,
+        maxRedirects: 5
       });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText} | URL ${url}`);
-      }
-      return yield res.text();
+      return typeof res.data === "string" ? res.data : String((_a = res.data) != null ? _a : "");
     } finally {
       clearTimeout(timer);
       signal == null ? void 0 : signal.removeEventListener("abort", onOuterAbort);
     }
   });
 }
-function watchWidgetPosts(baseUrl, signal, cheerio) {
+function watchWidgetPosts(baseUrl, signal, axios, cheerio, headers) {
   return __async(this, null, function* () {
-    const html = yield fetchText(`${baseUrl}/`, signal).catch(() => "");
+    const html = yield fetchText(axios, `${baseUrl}/`, signal, headers).catch(() => "");
     if (!html) return [];
     const $ = cheerio.load(html);
     const posts2 = [];
@@ -310,11 +310,13 @@ function posts(_0) {
   return __async(this, arguments, function* ({
     url,
     signal,
+    axios,
     cheerio,
+    headers,
     operation
   }) {
     try {
-      const data = yield fetchText(url, signal);
+      const data = yield fetchText(axios, url, signal, headers);
       const $ = cheerio.load(data);
       const baseUrl = new URL(url).origin;
       const catalog2 = [];
@@ -323,7 +325,6 @@ function posts(_0) {
         const href = $(el).attr("href") || "";
         const title = cleanText($(el).text());
         if (!href || title.length < 15) return;
-        if (/&do=|#comment/.test(href)) return;
         const link = canonicalTopicUrl(href, baseUrl);
         if (seen.has(link)) return;
         seen.add(link);
@@ -350,13 +351,14 @@ var init_posts = __esm({
         signal,
         providerContext
       }) {
-        const { cheerio } = providerContext;
+        const { axios, cheerio, commonHeaders } = providerContext;
         const baseUrl = (yield getBaseUrl("1tamilmv")) || "https://www.1tamilmv.io";
+        const headers = commonHeaders || {};
         if (filter === WATCH_FILTER) {
-          return watchWidgetPosts(baseUrl, signal, cheerio);
+          return watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
         }
         const url = `${baseUrl}${filter}${page > 1 ? `page/${page}/` : ""}`;
-        return posts({ url, signal, cheerio, operation: "posts" });
+        return posts({ url, signal, axios, cheerio, headers, operation: "posts" });
       });
     };
     getSearchPosts = function(_0) {
@@ -365,8 +367,9 @@ var init_posts = __esm({
         signal,
         providerContext
       }) {
-        const { cheerio } = providerContext;
+        const { axios, cheerio, commonHeaders } = providerContext;
         const baseUrl = (yield getBaseUrl("1tamilmv")) || "https://www.1tamilmv.io";
+        const headers = commonHeaders || {};
         const query = cleanText(searchQuery);
         if (!query) return [];
         try {
@@ -374,10 +377,12 @@ var init_posts = __esm({
           const results = yield posts({
             url: searchUrl,
             signal,
+            axios,
             cheerio,
+            headers,
             operation: "search posts"
           });
-          const watchPosts = yield watchWidgetPosts(baseUrl, signal, cheerio);
+          const watchPosts = yield watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
           const lower = query.toLowerCase();
           const tokens = lower.split(/\s+/).filter(Boolean);
           const matches = (title) => {
@@ -544,6 +549,59 @@ function fetchHtml2(axios, url, headers, signal) {
     }
   });
 }
+function resolveDirectChain(axios, cheerio, startUrl, headers, signal) {
+  return __async(this, null, function* () {
+    var _a;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25e3);
+    const onOuterAbort = () => controller.abort();
+    signal == null ? void 0 : signal.addEventListener("abort", onOuterAbort);
+    try {
+      let url = startUrl;
+      let referer = "";
+      for (let hop = 0; hop < 6 && !isDirectMedia(url); hop++) {
+        const res = yield axios.get(url, {
+          headers: referer ? __spreadProps(__spreadValues({}, headers), { Referer: referer }) : headers,
+          signal: controller.signal,
+          timeout: REQUEST_TIMEOUT_MS3,
+          maxRedirects: 0,
+          validateStatus: null
+        });
+        const location = (_a = res.headers) == null ? void 0 : _a.location;
+        if (location && res.status >= 300 && res.status < 400) {
+          referer = url;
+          url = new URL(location, url).href;
+          continue;
+        }
+        if (res.status !== 200 || typeof res.data !== "string") return null;
+        const $ = cheerio.load(res.data);
+        let next = "";
+        $("a[href]").each((_i, el) => {
+          if (next) return;
+          const href = $(el).attr("href") || "";
+          const text = cleanText($(el).text());
+          const abs = /^https?:\/\//i.test(href) ? href : new URL(href, url).href;
+          if (isDirectMedia(abs)) {
+            next = abs;
+            return;
+          }
+          if (/continue|destination|direct|download/i.test(text) && /\/out\/?\?|\/go\/?\?/.test(abs)) {
+            next = abs;
+          }
+        });
+        if (!next) return null;
+        referer = url;
+        url = next.replace(/&amp;/g, "&");
+      }
+      return isDirectMedia(url) ? { link: url, quality: getQuality(url) } : null;
+    } catch (e) {
+      return null;
+    } finally {
+      clearTimeout(timer);
+      signal == null ? void 0 : signal.removeEventListener("abort", onOuterAbort);
+    }
+  });
+}
 function resolveWatchPage(html, pageUrl, headers) {
   var _a;
   const streams = [];
@@ -586,11 +644,15 @@ function getStream(_0) {
         const html2 = yield fetchHtml2(axios, link, headers, signal);
         const $ = cheerio.load(html2);
         const watchUrls = [];
+        const directUrls = [];
         $("div[data-role=commentContent] a[href]").each((_i, el) => {
           const href = $(el).attr("href") || "";
           const text = cleanText($(el).text());
           if ((text === "[W]" || isWatchHost(href)) && !watchUrls.includes(href)) {
             watchUrls.push(href);
+          }
+          if ((/direct\s*link/i.test(text) || /cyberloom\./i.test(href)) && /^https?:\/\//i.test(href) && !directUrls.includes(href)) {
+            directUrls.push(href);
           }
         });
         for (const watchUrl of watchUrls.slice(0, 3)) {
@@ -599,6 +661,45 @@ function getStream(_0) {
           );
           streams.push(...resolveWatchPage(page, watchUrl, headers));
           if (streams.length >= 2) break;
+        }
+        for (const directUrl of directUrls.slice(0, 2)) {
+          if (streams.length >= 3) break;
+          const resolved = yield resolveDirectChain(
+            axios,
+            cheerio,
+            directUrl,
+            headers,
+            signal
+          );
+          if (resolved) {
+            streams.push({
+              server: `1TamilMV Direct ${streams.length + 1}`,
+              link: resolved.link,
+              type: /\.m3u8/i.test(resolved.link) ? "m3u8" : /\.mkv/i.test(resolved.link) ? "mkv" : "mp4",
+              quality: resolved.quality,
+              headers
+            });
+          }
+        }
+        return streams;
+      }
+      if (/cyberloom\./i.test(link)) {
+        const resolved = yield resolveDirectChain(
+          axios,
+          cheerio,
+          link,
+          headers,
+          signal
+        );
+        if (resolved) {
+          streams.push({
+            server: "1TamilMV Direct",
+            link: resolved.link,
+            type: /\.m3u8/i.test(resolved.link) ? "m3u8" : /\.mkv/i.test(resolved.link) ? "mkv" : "mp4",
+            quality: resolved.quality,
+            headers
+          });
+          return streams;
         }
         return streams;
       }
@@ -638,13 +739,14 @@ function getStream(_0) {
     return streams;
   });
 }
-var REQUEST_TIMEOUT_MS3;
+var REQUEST_TIMEOUT_MS3, isDirectMedia;
 var init_stream = __esm({
   "providers/1tamilmv/stream.ts"() {
     "use strict";
     init_providerErrors();
     init_utils();
     REQUEST_TIMEOUT_MS3 = 15e3;
+    isDirectMedia = (url) => /\.(mkv|mp4|webm|avi|m3u8)(\?|$)/i.test(url) || /\/files\/.+\?token=/i.test(url);
   }
 });
 

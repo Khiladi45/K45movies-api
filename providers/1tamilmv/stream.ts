@@ -36,6 +36,81 @@ async function fetchHtml(
   }
 }
 
+const isDirectMedia = (url: string) =>
+  /\.(mkv|mp4|webm|avi|m3u8)(\?|$)/i.test(url) || /\/files\/.+\?token=/i.test(url);
+
+/**
+ * "DIRECT LINK" entries are cyberloom.best shortlinks that hop through an
+ * interstitial ("Continue to Destination"), then messycloud.ink, before
+ * 302-ing to a signed cdn.juicybits.site file. Each stage is either a 3xx
+ * (follow Location) or an HTML page whose next hop is an anchor.
+ */
+async function resolveDirectChain(
+  axios: any,
+  cheerio: any,
+  startUrl: string,
+  headers: any,
+  signal: AbortSignal | undefined,
+): Promise<{ link: string; quality?: string } | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25_000);
+  const onOuterAbort = () => controller.abort();
+  signal?.addEventListener("abort", onOuterAbort);
+
+  try {
+    let url = startUrl;
+    let referer = "";
+    for (let hop = 0; hop < 6 && !isDirectMedia(url); hop++) {
+      const res: any = await axios.get(url, {
+        headers: referer ? { ...headers, Referer: referer } : headers,
+        signal: controller.signal,
+        timeout: REQUEST_TIMEOUT_MS,
+        maxRedirects: 0,
+        validateStatus: null,
+      });
+      const location = res.headers?.location;
+      if (location && res.status >= 300 && res.status < 400) {
+        referer = url;
+        url = new URL(location, url).href;
+        continue;
+      }
+      if (res.status !== 200 || typeof res.data !== "string") return null;
+
+      const $ = cheerio.load(res.data);
+      let next = "";
+      $("a[href]").each((_i: number, el: any) => {
+        if (next) return;
+        const href = $(el).attr("href") || "";
+        const text = cleanText($(el).text());
+        const abs = /^https?:\/\//i.test(href)
+          ? href
+          : new URL(href, url).href;
+        if (isDirectMedia(abs)) {
+          next = abs;
+          return;
+        }
+        if (
+          /continue|destination|direct|download/i.test(text) &&
+          /\/out\/?\?|\/go\/?\?/.test(abs)
+        ) {
+          next = abs;
+        }
+      });
+      if (!next) return null;
+      referer = url;
+      url = next.replace(/&amp;/g, "&");
+    }
+    return isDirectMedia(url)
+      ? { link: url, quality: getQuality(url) }
+      : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onOuterAbort);
+  }
+}
+
 /**
  * LuluStream-family embeds (`/e/<id>`) hide a jwplayer config inside a packed
  * `eval(function(p,a,c,k,e,d){…})` script. Unpacked, it yields a signed HLS
@@ -93,16 +168,24 @@ export async function getStream({
   let streams: Stream[] = [];
 
   try {
-    // Topic URL: collect every [W] watch embed in the topic, then resolve each.
+    // Topic URL: collect every [W] watch embed and DIRECT LINK, then resolve.
     if (isTopicUrl(link)) {
       const html = await fetchHtml(axios, link, headers, signal);
       const $ = cheerio.load(html);
       const watchUrls: string[] = [];
+      const directUrls: string[] = [];
       $("div[data-role=commentContent] a[href]").each((_i, el) => {
         const href = $(el).attr("href") || "";
         const text = cleanText($(el).text());
         if ((text === "[W]" || isWatchHost(href)) && !watchUrls.includes(href)) {
           watchUrls.push(href);
+        }
+        if (
+          (/direct\s*link/i.test(text) || /cyberloom\./i.test(href)) &&
+          /^https?:\/\//i.test(href) &&
+          !directUrls.includes(href)
+        ) {
+          directUrls.push(href);
         }
       });
       for (const watchUrl of watchUrls.slice(0, 3)) {
@@ -111,6 +194,55 @@ export async function getStream({
         );
         streams.push(...resolveWatchPage(page, watchUrl, headers));
         if (streams.length >= 2) break;
+      }
+      for (const directUrl of directUrls.slice(0, 2)) {
+        if (streams.length >= 3) break;
+        const resolved = await resolveDirectChain(
+          axios,
+          cheerio,
+          directUrl,
+          headers,
+          signal,
+        );
+        if (resolved) {
+          streams.push({
+            server: `1TamilMV Direct ${streams.length + 1}`,
+            link: resolved.link,
+            type: /\.m3u8/i.test(resolved.link)
+              ? "m3u8"
+              : /\.mkv/i.test(resolved.link)
+                ? "mkv"
+                : "mp4",
+            quality: resolved.quality,
+            headers,
+          });
+        }
+      }
+      return streams;
+    }
+
+    // Cyberloom / shortlink DIRECT LINK outside a topic: run the full chain.
+    if (/cyberloom\./i.test(link)) {
+      const resolved = await resolveDirectChain(
+        axios,
+        cheerio,
+        link,
+        headers,
+        signal,
+      );
+      if (resolved) {
+        streams.push({
+          server: "1TamilMV Direct",
+          link: resolved.link,
+          type: /\.m3u8/i.test(resolved.link)
+            ? "m3u8"
+            : /\.mkv/i.test(resolved.link)
+              ? "mkv"
+              : "mp4",
+          quality: resolved.quality,
+          headers,
+        });
+        return streams;
       }
       return streams;
     }

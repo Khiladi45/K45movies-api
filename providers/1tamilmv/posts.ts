@@ -22,13 +22,13 @@ export const getPosts = async function ({
   signal: AbortSignal;
   providerContext: ProviderContext;
 }): Promise<Post[]> {
-  const { cheerio } = providerContext;
+  const { axios, cheerio, commonHeaders } = providerContext;
   const baseUrl = (await getBaseUrl("1tamilmv")) || "https://www.1tamilmv.io";
+  const headers = commonHeaders || {};
   if (filter === WATCH_FILTER) {
-    return watchWidgetPosts(baseUrl, signal, cheerio);
-  }
-  const url = `${baseUrl}${filter}${page > 1 ? `page/${page}/` : ""}`;
-  return posts({ url, signal, cheerio, operation: "posts" });
+    return watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
+  }  const url = `${baseUrl}${filter}${page > 1 ? `page/${page}/` : ""}`;
+  return posts({ url, signal, axios, cheerio, headers, operation: "posts" });
 };
 
 export const getSearchPosts = async function ({
@@ -42,8 +42,9 @@ export const getSearchPosts = async function ({
   signal: AbortSignal;
   providerContext: ProviderContext;
 }): Promise<Post[]> {
-  const { cheerio } = providerContext;
+  const { axios, cheerio, commonHeaders } = providerContext;
   const baseUrl = (await getBaseUrl("1tamilmv")) || "https://www.1tamilmv.io";
+  const headers = commonHeaders || {};
   const query = cleanText(searchQuery);
   if (!query) return [];
 
@@ -52,12 +53,14 @@ export const getSearchPosts = async function ({
     const results = await posts({
       url: searchUrl,
       signal,
+      axios,
       cheerio,
+      headers,
       operation: "search posts",
     });
 
     // Search prefers playable entries: prepend watch-widget hits, then topics.
-    const watchPosts = await watchWidgetPosts(baseUrl, signal, cheerio);
+    const watchPosts = await watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
     const lower = query.toLowerCase();
     const tokens = lower.split(/\s+/).filter(Boolean);
     const matches = (title: string) => {
@@ -77,20 +80,24 @@ export const getSearchPosts = async function ({
   }
 };
 
-async function fetchText(url: string, signal: AbortSignal | undefined) {
+async function fetchText(
+  axios: any,
+  url: string,
+  signal: AbortSignal | undefined,
+  headers: Record<string, string>,
+) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const onOuterAbort = () => controller.abort();
   signal?.addEventListener("abort", onOuterAbort);
   try {
-    const res = await fetch(url, {
+    const res = await axios.get(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+      headers,
+      timeout: REQUEST_TIMEOUT_MS,
+      maxRedirects: 5,
     });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText} | URL ${url}`);
-    }
-    return await res.text();
+    return typeof res.data === "string" ? res.data : String(res.data ?? "");
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onOuterAbort);
@@ -107,9 +114,11 @@ async function fetchText(url: string, signal: AbortSignal | undefined) {
 async function watchWidgetPosts(
   baseUrl: string,
   signal: AbortSignal | undefined,
+  axios: any,
   cheerio: ProviderContext["cheerio"],
+  headers: Record<string, string>,
 ): Promise<Post[]> {
-  const html = await fetchText(`${baseUrl}/`, signal).catch(() => "");
+  const html = await fetchText(axios, `${baseUrl}/`, signal, headers).catch(() => "");
   if (!html) return [];
   const $ = cheerio.load(html);
 
@@ -158,16 +167,20 @@ async function watchWidgetPosts(
 async function posts({
   url,
   signal,
+  axios,
   cheerio,
+  headers,
   operation,
 }: {
   url: string;
   signal: AbortSignal;
+  axios: any;
   cheerio: ProviderContext["cheerio"];
+  headers: Record<string, string>;
   operation: string;
 }): Promise<Post[]> {
   try {
-    const data = await fetchText(url, signal);
+    const data = await fetchText(axios, url, signal, headers);
     const $ = cheerio.load(data);
     const baseUrl = new URL(url).origin;
 
@@ -177,7 +190,8 @@ async function posts({
       const href = $(el).attr("href") || "";
       const title = cleanText($(el).text());
       if (!href || title.length < 15) return;
-      if (/&do=|#comment/.test(href)) return;
+      // Search results link to a specific comment (&do=findComment&comment=N);
+      // canonicalTopicUrl strips that so the row points at the topic itself.
       const link = canonicalTopicUrl(href, baseUrl);
       if (seen.has(link)) return;
       seen.add(link);

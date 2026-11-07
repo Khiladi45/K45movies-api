@@ -29,14 +29,17 @@ export const canonicalTopicUrl = (href: string, baseUrl: string) => {
     .split("#")[0]
     .replace(/&preview=1/, "")
     .replace(/&do=[^&]*/, "")
+    .replace(/&comment=\d+/, "")
     .replace(/\/page\/\d+\/$/, "/");
 };
 
 export const getQuality = (text: string) => {
-  const m = text.match(/\b(2160|1080|720|480|360)p?\b|\b(4k)\b/i);
-  if (!m) return undefined;
-  if (m[2]) return "2160";
-  return m[1];
+  // Filenames join tokens with "_", so plain \b misses "_1080p_" — use
+  // digit boundaries instead.
+  const m = text.match(/(?:^|[^\d])(2160|1080|720|480|360)p?(?:[^\d]|$)/i);
+  if (m) return m[1];
+  if (/\b4k\b/i.test(text)) return "2160";
+  return undefined;
 };
 
 /**
