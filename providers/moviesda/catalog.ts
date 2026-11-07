@@ -8,12 +8,20 @@ export const catalog = [
     filter: "/tamil-2025-movies/",
   },
   {
+    title: "Tamil 2024 Movies",
+    filter: "/tamil-2024-movies/",
+  },
+  {
     title: "Tamil Dubbed Movies",
     filter: "/tamil-dubbed-movies/",
   },
   {
-    title: "Latest Tamil Web Series",
-    filter: "/latest-tamil-web-series/",
+    title: "Tamil Web Series",
+    filter: "/tamil-web-series-download/",
+  },
+  {
+    title: "Latest Updates",
+    filter: "/tamil-latest-updates/",
   },
 ];
 

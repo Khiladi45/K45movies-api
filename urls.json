@@ -106,5 +106,9 @@
   "mxplayer": {
     "name": "mxplayer",
     "url": "https://www.mxplayer.in"
+  },
+  "1tamilmv": {
+    "name": "1TamilMV",
+    "url": "https://www.1tamilmv.io"
   }
 }

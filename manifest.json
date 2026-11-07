@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-11-07T06:24:25Z",
+  "updatedAt": "2026-11-07T08:25:28Z",
   "providers": [
     {
       "id": "1flex",
@@ -8,6 +8,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/1flex.js",
+      "icon": null
+    },
+    {
+      "id": "1tamilmv",
+      "name": "1tamilmv",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/1tamilmv.js",
       "icon": null
     },
     {
