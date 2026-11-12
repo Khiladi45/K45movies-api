@@ -9,6 +9,11 @@ import {
 } from "./utils";
 
 const REQUEST_TIMEOUT_MS = 15_000;
+const HTML_TTL_MS = 3 * 60_000;
+const htmlCache = new Map<string, { at: number; html: string }>();
+// Home and search share the same watch widget. Reuse its rows rather than
+// parsing the full forum homepage on the app's JS thread for every search.
+let watchCache: { url: string; at: number; posts: Post[] } | undefined;
 
 export const getPosts = async function ({
   filter,
@@ -26,8 +31,9 @@ export const getPosts = async function ({
   const baseUrl = (await getBaseUrl("1tamilmv")) || "https://www.1tamilmv.io";
   const headers = commonHeaders || {};
   if (filter === WATCH_FILTER) {
-    return watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
-  }  const url = `${baseUrl}${filter}${page > 1 ? `page/${page}/` : ""}`;
+    return page > 1 ? [] : watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
+  }
+  const url = `${baseUrl}${filter}${page > 1 ? `page/${page}/` : ""}`;
   return posts({ url, signal, axios, cheerio, headers, operation: "posts" });
 };
 
@@ -50,17 +56,18 @@ export const getSearchPosts = async function ({
 
   try {
     const searchUrl = `${baseUrl}/index.php?/search/&q=${encodeURIComponent(query)}&type=forums_topic`;
-    const results = await posts({
-      url: searchUrl,
-      signal,
-      axios,
-      cheerio,
-      headers,
-      operation: "search posts",
-    });
-
-    // Search prefers playable entries: prepend watch-widget hits, then topics.
-    const watchPosts = await watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
+    const [forum, watchPosts] = await Promise.all([
+      posts({
+        url: searchUrl,
+        signal,
+        axios,
+        cheerio,
+        headers,
+        operation: "search posts",
+      }).then((rows) => ({ rows }), (error: unknown) => ({ error })),
+      watchWidgetPosts(baseUrl, signal, axios, cheerio, headers).catch(() => []),
+    ]);
+    if (signal?.aborted) return [];
     const lower = query.toLowerCase();
     const tokens = lower.split(/\s+/).filter(Boolean);
     const matches = (title: string) => {
@@ -70,7 +77,8 @@ export const getSearchPosts = async function ({
       );
     };
     const watchHits = watchPosts.filter((p) => matches(p.title));
-    const topicResults = results.filter(
+    if ("error" in forum && watchHits.length === 0) throw forum.error;
+    const topicResults = ("rows" in forum ? forum.rows : []).filter(
       (p) => !watchHits.some((w) => w.title === p.title),
     );
 
@@ -86,6 +94,10 @@ async function fetchText(
   signal: AbortSignal | undefined,
   headers: Record<string, string>,
 ) {
+  if (signal?.aborted) return "";
+  const cached = htmlCache.get(url);
+  if (cached && Date.now() - cached.at < HTML_TTL_MS) return cached.html;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const onOuterAbort = () => controller.abort();
@@ -97,20 +109,20 @@ async function fetchText(
       timeout: REQUEST_TIMEOUT_MS,
       maxRedirects: 5,
     });
-    return typeof res.data === "string" ? res.data : String(res.data ?? "");
+    const html =
+      typeof res.data === "string" ? res.data : String(res.data ?? "");
+    if (html) {
+      if (htmlCache.size >= 6) htmlCache.delete(htmlCache.keys().next().value!);
+      htmlCache.set(url, { at: Date.now(), html });
+    }
+    return html;
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onOuterAbort);
   }
 }
 
-/**
- * The homepage widgets ("TOP RELEASES THIS WEEK" / "RECENTLY ADDED") emit one
- * movie per row:
- *   <p><strong>Name (2026) Tamil HD + ESub -</strong>
- *      <strong><a href=topic>[1080p …]</a> - <a href=luluvido>[W]</a></strong></p>
- * Every [W] anchor carries a third-party watch embed for that release.
- */
+/** The homepage groups multiple releases in a paragraph, separated by <br>. */
 async function watchWidgetPosts(
   baseUrl: string,
   signal: AbortSignal | undefined,
@@ -118,49 +130,45 @@ async function watchWidgetPosts(
   cheerio: ProviderContext["cheerio"],
   headers: Record<string, string>,
 ): Promise<Post[]> {
-  const html = await fetchText(axios, `${baseUrl}/`, signal, headers).catch(() => "");
-  if (!html) return [];
-  const $ = cheerio.load(html);
+  const url = `${baseUrl}/`;
+  if (signal?.aborted) return [];
+  if (watchCache?.url === url && Date.now() - watchCache.at < HTML_TTL_MS) {
+    return watchCache.posts;
+  }
+  const html = await fetchText(axios, url, signal, headers);
+  if (!html || signal?.aborted) return [];
+  const $ = cheerio.load(html, { xml: { xmlMode: false } });
 
   const posts: Post[] = [];
   const seen = new Set<string>();
-  $("a[href]")
-    .filter((_i, el) => cleanText($(el).text()) === "[W]")
-    .each((_i, el) => {
-      const watchUrl = $(el).attr("href") || "";
-      if (!watchUrl) return;
-
-      const ownStrong = $(el).closest("strong");
-      const topicHref =
-        ownStrong.find('a[href*="/topic/"]').first().attr("href") ||
-        $(el)
-          .closest("p, div")
-          .find('a[href*="/topic/"]')
-          .first()
-          .attr("href") ||
-        "";
-      if (!topicHref) return;
-
-      // Row name: the preceding link-less <strong>, else the row text minus anchors.
-      let nameSource = "";
-      const prev = ownStrong.prev("strong");
-      if (prev.length > 0 && prev.find("a").length === 0) {
-        nameSource = cleanText(prev.text());
-      } else {
-        const rowClone = $(el).closest("p, div").clone();
-        rowClone.find("a").remove();
-        nameSource = cleanText(rowClone.text()).replace(/[-–|]\s*$/, "").trim();
+  const topics = new Map<unknown, string>();
+  $("a[href]").each((_i, el) => {
+      const anchor = $(el);
+      const href = anchor.attr("href") || "";
+      if (href.includes("/forums/topic/")) {
+        topics.set(anchor.closest("p, div").get(0), canonicalTopicUrl(href, baseUrl));
+        return;
       }
+      if (!/^https?:\/\//i.test(href) || cleanText(anchor.text()) !== "[W]") return;
 
-      const key = canonicalTopicUrl(topicHref, baseUrl);
-      if (seen.has(key)) return;
-      seen.add(key);
+      const block = anchor.closest("p, div").get(0);
+      const topic = topics.get(block);
+      if (!topic) return;
+      topics.delete(block);
+      if (seen.has(href)) return;
+      const release = topic.match(/\/topic\/\d+-(.+?)-((?:19|20)\d{2})(?:-|\/|$)/i);
+      if (!release) return;
+      const name = release[1].split("-").map((word) =>
+        word.charAt(0).toUpperCase() + word.slice(1),
+      ).join(" ");
+      seen.add(href);
       posts.push({
-        title: displayTitle(nameSource) || `Watch Online ${posts.length + 1}`,
-        link: watchUrl,
+        title: `${name} (${release[2]})`,
+        link: href,
         image: "",
       });
-    });
+  });
+  if (posts.length) watchCache = { url, at: Date.now(), posts };
   return posts;
 }
 
@@ -181,7 +189,8 @@ async function posts({
 }): Promise<Post[]> {
   try {
     const data = await fetchText(axios, url, signal, headers);
-    const $ = cheerio.load(data);
+    if (!data || signal?.aborted) return [];
+    const $ = cheerio.load(data, { xml: { xmlMode: false } });
     const baseUrl = new URL(url).origin;
 
     const catalog: Post[] = [];

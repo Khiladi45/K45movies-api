@@ -80,6 +80,7 @@ export const unpackPacked = (html: string): string | null => {
   const payload = html.slice(startIdx + 3, tail.index);
   const radix = Number(tail[1]);
   const count = Number(tail[2]);
+  if (radix < 2 || radix > 36 || count > 2048 || payload.length > 128_000) return null;
   const words = tail[3].split("|");
 
   let result = payload;

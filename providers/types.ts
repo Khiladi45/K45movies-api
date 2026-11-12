@@ -60,6 +60,7 @@ export interface Stream {
   server: string;
   link: string;
   type: string;
+  downloadOnly?: boolean;
   quality?: "360" | "480" | "720" | "1080" | "2160" | string;
   tag?: string;
   tags?: string[];

@@ -110,5 +110,13 @@
   "1tamilmv": {
     "name": "1TamilMV",
     "url": "https://www.1tamilmv.io"
+  },
+  "1tamilblasters": {
+    "name": "1TamilBlasters",
+    "url": "https://www.1tamilblasters.blog"
+  },
+  "hdmovieslife": {
+    "name": "HDMoviesLife",
+    "url": "https://hdmovies.life"
   }
 }

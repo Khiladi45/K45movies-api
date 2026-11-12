@@ -229,6 +229,7 @@ var init_utils = __esm({
       const payload = html.slice(startIdx + 3, tail.index);
       const radix = Number(tail[1]);
       const count = Number(tail[2]);
+      if (radix < 2 || radix > 36 || count > 2048 || payload.length > 128e3) return null;
       const words = tail[3].split("|");
       let result = payload;
       for (let i = count - 1; i >= 0; i--) {
@@ -254,6 +255,9 @@ __export(posts_exports, {
 function fetchText(axios, url, signal, headers) {
   return __async(this, null, function* () {
     var _a;
+    if (signal == null ? void 0 : signal.aborted) return "";
+    const cached = htmlCache.get(url);
+    if (cached && Date.now() - cached.at < HTML_TTL_MS) return cached.html;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     const onOuterAbort = () => controller.abort();
@@ -265,7 +269,12 @@ function fetchText(axios, url, signal, headers) {
         timeout: REQUEST_TIMEOUT_MS,
         maxRedirects: 5
       });
-      return typeof res.data === "string" ? res.data : String((_a = res.data) != null ? _a : "");
+      const html = typeof res.data === "string" ? res.data : String((_a = res.data) != null ? _a : "");
+      if (html) {
+        if (htmlCache.size >= 6) htmlCache.delete(htmlCache.keys().next().value);
+        htmlCache.set(url, { at: Date.now(), html });
+      }
+      return html;
     } finally {
       clearTimeout(timer);
       signal == null ? void 0 : signal.removeEventListener("abort", onOuterAbort);
@@ -274,35 +283,43 @@ function fetchText(axios, url, signal, headers) {
 }
 function watchWidgetPosts(baseUrl, signal, axios, cheerio, headers) {
   return __async(this, null, function* () {
-    const html = yield fetchText(axios, `${baseUrl}/`, signal, headers).catch(() => "");
-    if (!html) return [];
-    const $ = cheerio.load(html);
+    const url = `${baseUrl}/`;
+    if (signal == null ? void 0 : signal.aborted) return [];
+    if ((watchCache == null ? void 0 : watchCache.url) === url && Date.now() - watchCache.at < HTML_TTL_MS) {
+      return watchCache.posts;
+    }
+    const html = yield fetchText(axios, url, signal, headers);
+    if (!html || (signal == null ? void 0 : signal.aborted)) return [];
+    const $ = cheerio.load(html, { xml: { xmlMode: false } });
     const posts2 = [];
     const seen = /* @__PURE__ */ new Set();
-    $("a[href]").filter((_i, el) => cleanText($(el).text()) === "[W]").each((_i, el) => {
-      const watchUrl = $(el).attr("href") || "";
-      if (!watchUrl) return;
-      const ownStrong = $(el).closest("strong");
-      const topicHref = ownStrong.find('a[href*="/topic/"]').first().attr("href") || $(el).closest("p, div").find('a[href*="/topic/"]').first().attr("href") || "";
-      if (!topicHref) return;
-      let nameSource = "";
-      const prev = ownStrong.prev("strong");
-      if (prev.length > 0 && prev.find("a").length === 0) {
-        nameSource = cleanText(prev.text());
-      } else {
-        const rowClone = $(el).closest("p, div").clone();
-        rowClone.find("a").remove();
-        nameSource = cleanText(rowClone.text()).replace(/[-–|]\s*$/, "").trim();
+    const topics = /* @__PURE__ */ new Map();
+    $("a[href]").each((_i, el) => {
+      const anchor = $(el);
+      const href = anchor.attr("href") || "";
+      if (href.includes("/forums/topic/")) {
+        topics.set(anchor.closest("p, div").get(0), canonicalTopicUrl(href, baseUrl));
+        return;
       }
-      const key = canonicalTopicUrl(topicHref, baseUrl);
-      if (seen.has(key)) return;
-      seen.add(key);
+      if (!/^https?:\/\//i.test(href) || cleanText(anchor.text()) !== "[W]") return;
+      const block = anchor.closest("p, div").get(0);
+      const topic = topics.get(block);
+      if (!topic) return;
+      topics.delete(block);
+      if (seen.has(href)) return;
+      const release = topic.match(/\/topic\/\d+-(.+?)-((?:19|20)\d{2})(?:-|\/|$)/i);
+      if (!release) return;
+      const name = release[1].split("-").map(
+        (word) => word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(" ");
+      seen.add(href);
       posts2.push({
-        title: displayTitle(nameSource) || `Watch Online ${posts2.length + 1}`,
-        link: watchUrl,
+        title: `${name} (${release[2]})`,
+        link: href,
         image: ""
       });
     });
+    if (posts2.length) watchCache = { url, at: Date.now(), posts: posts2 };
     return posts2;
   });
 }
@@ -317,7 +334,8 @@ function posts(_0) {
   }) {
     try {
       const data = yield fetchText(axios, url, signal, headers);
-      const $ = cheerio.load(data);
+      if (!data || (signal == null ? void 0 : signal.aborted)) return [];
+      const $ = cheerio.load(data, { xml: { xmlMode: false } });
       const baseUrl = new URL(url).origin;
       const catalog2 = [];
       const seen = /* @__PURE__ */ new Set();
@@ -336,7 +354,7 @@ function posts(_0) {
     }
   });
 }
-var REQUEST_TIMEOUT_MS, getPosts, getSearchPosts;
+var REQUEST_TIMEOUT_MS, HTML_TTL_MS, htmlCache, watchCache, getPosts, getSearchPosts;
 var init_posts = __esm({
   "providers/1tamilmv/posts.ts"() {
     "use strict";
@@ -344,6 +362,8 @@ var init_posts = __esm({
     init_providerErrors();
     init_utils();
     REQUEST_TIMEOUT_MS = 15e3;
+    HTML_TTL_MS = 3 * 6e4;
+    htmlCache = /* @__PURE__ */ new Map();
     getPosts = function(_0) {
       return __async(this, arguments, function* ({
         filter,
@@ -355,7 +375,7 @@ var init_posts = __esm({
         const baseUrl = (yield getBaseUrl("1tamilmv")) || "https://www.1tamilmv.io";
         const headers = commonHeaders || {};
         if (filter === WATCH_FILTER) {
-          return watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
+          return page > 1 ? [] : watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
         }
         const url = `${baseUrl}${filter}${page > 1 ? `page/${page}/` : ""}`;
         return posts({ url, signal, axios, cheerio, headers, operation: "posts" });
@@ -374,15 +394,18 @@ var init_posts = __esm({
         if (!query) return [];
         try {
           const searchUrl = `${baseUrl}/index.php?/search/&q=${encodeURIComponent(query)}&type=forums_topic`;
-          const results = yield posts({
-            url: searchUrl,
-            signal,
-            axios,
-            cheerio,
-            headers,
-            operation: "search posts"
-          });
-          const watchPosts = yield watchWidgetPosts(baseUrl, signal, axios, cheerio, headers);
+          const [forum, watchPosts] = yield Promise.all([
+            posts({
+              url: searchUrl,
+              signal,
+              axios,
+              cheerio,
+              headers,
+              operation: "search posts"
+            }).then((rows) => ({ rows }), (error) => ({ error })),
+            watchWidgetPosts(baseUrl, signal, axios, cheerio, headers).catch(() => [])
+          ]);
+          if (signal == null ? void 0 : signal.aborted) return [];
           const lower = query.toLowerCase();
           const tokens = lower.split(/\s+/).filter(Boolean);
           const matches = (title) => {
@@ -392,7 +415,8 @@ var init_posts = __esm({
             );
           };
           const watchHits = watchPosts.filter((p) => matches(p.title));
-          const topicResults = results.filter(
+          if ("error" in forum && watchHits.length === 0) throw forum.error;
+          const topicResults = ("rows" in forum ? forum.rows : []).filter(
             (p) => !watchHits.some((w) => w.title === p.title)
           );
           return [...watchHits, ...topicResults];
@@ -530,10 +554,11 @@ __export(stream_exports, {
 });
 function fetchHtml2(axios, url, headers, signal) {
   return __async(this, null, function* () {
-    var _a;
+    var _a, _b, _c;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS3);
     const onOuterAbort = () => controller.abort();
+    if (signal == null ? void 0 : signal.aborted) controller.abort();
     signal == null ? void 0 : signal.addEventListener("abort", onOuterAbort);
     try {
       const res = yield axios.get(url, {
@@ -542,7 +567,10 @@ function fetchHtml2(axios, url, headers, signal) {
         timeout: REQUEST_TIMEOUT_MS3,
         maxRedirects: 5
       });
-      return typeof res.data === "string" ? res.data : String((_a = res.data) != null ? _a : "");
+      return {
+        html: typeof res.data === "string" ? res.data : "",
+        url: ((_a = res.request) == null ? void 0 : _a.responseURL) || ((_c = (_b = res.request) == null ? void 0 : _b.res) == null ? void 0 : _c.responseUrl) || url
+      };
     } finally {
       clearTimeout(timer);
       signal == null ? void 0 : signal.removeEventListener("abort", onOuterAbort);
@@ -551,10 +579,11 @@ function fetchHtml2(axios, url, headers, signal) {
 }
 function resolveDirectChain(axios, cheerio, startUrl, headers, signal) {
   return __async(this, null, function* () {
-    var _a;
+    var _a, _b, _c, _d, _e;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25e3);
     const onOuterAbort = () => controller.abort();
+    if (signal == null ? void 0 : signal.aborted) controller.abort();
     signal == null ? void 0 : signal.addEventListener("abort", onOuterAbort);
     try {
       let url = startUrl;
@@ -572,6 +601,10 @@ function resolveDirectChain(axios, cheerio, startUrl, headers, signal) {
           referer = url;
           url = new URL(location, url).href;
           continue;
+        }
+        url = ((_b = res.request) == null ? void 0 : _b.responseURL) || ((_d = (_c = res.request) == null ? void 0 : _c.res) == null ? void 0 : _d.responseUrl) || url;
+        if (res.status >= 200 && res.status < 300 && /^video\//i.test(((_e = res.headers) == null ? void 0 : _e["content-type"]) || "")) {
+          return { link: url, quality: getQuality(url) };
         }
         if (res.status !== 200 || typeof res.data !== "string") return null;
         const $ = cheerio.load(res.data);
@@ -606,7 +639,12 @@ function resolveWatchPage(html, pageUrl, headers) {
   var _a;
   const streams = [];
   const add = (link, type, quality) => {
-    if (!link || streams.some((s) => s.link === link)) return;
+    try {
+      link = new URL(link.replace(/\\\//g, "/").replace(/\\u0026/g, "&").replace(/&amp;/g, "&"), pageUrl).href;
+    } catch (e) {
+      return;
+    }
+    if (!/^https?:\/\//i.test(link) || streams.some((s) => s.link === link)) return;
     streams.push({
       server: `1TamilMV ${streams.length + 1}`,
       link,
@@ -641,8 +679,8 @@ function getStream(_0) {
     let streams = [];
     try {
       if (isTopicUrl(link)) {
-        const html2 = yield fetchHtml2(axios, link, headers, signal);
-        const $ = cheerio.load(html2);
+        const topic = yield fetchHtml2(axios, link, headers, signal);
+        const $ = cheerio.load(topic.html, { xml: { xmlMode: false } });
         const watchUrls = [];
         const directUrls = [];
         $("div[data-role=commentContent] a[href]").each((_i, el) => {
@@ -656,10 +694,10 @@ function getStream(_0) {
           }
         });
         for (const watchUrl of watchUrls.slice(0, 3)) {
-          const page = yield fetchHtml2(axios, watchUrl, headers, signal).catch(
-            () => ""
+          const page2 = yield fetchHtml2(axios, watchUrl, __spreadProps(__spreadValues({}, headers), { Referer: topic.url }), signal).catch(
+            () => null
           );
-          streams.push(...resolveWatchPage(page, watchUrl, headers));
+          if (page2) streams.push(...resolveWatchPage(page2.html, page2.url, headers));
           if (streams.length >= 2) break;
         }
         for (const directUrl of directUrls.slice(0, 2)) {
@@ -705,33 +743,15 @@ function getStream(_0) {
       }
       if (isShortLink(link)) {
         try {
-          const html2 = yield fetchHtml2(axios, link, headers, signal);
-          streams.push(...resolveWatchPage(html2, link, headers));
-          if (streams.length === 0) {
-            streams.push({
-              server: "1TamilMV Embed",
-              link,
-              type: "embed",
-              quality: getQuality(link),
-              headers
-            });
-          }
+          const page2 = yield fetchHtml2(axios, link, headers, signal);
+          streams.push(...resolveWatchPage(page2.html, page2.url, headers));
           return streams;
         } catch (e) {
           return streams;
         }
       }
-      const html = yield fetchHtml2(axios, link, headers, signal);
-      streams = resolveWatchPage(html, link, headers);
-      if (streams.length === 0 && isWatchHost(link)) {
-        streams.push({
-          server: "1TamilMV Embed",
-          link,
-          type: "embed",
-          quality: getQuality(link),
-          headers
-        });
-      }
+      const page = yield fetchHtml2(axios, link, headers, signal);
+      streams = resolveWatchPage(page.html, page.url, headers);
       return streams;
     } catch (err) {
       if (streams.length === 0) throwProviderError("1TamilMV", "stream", err);

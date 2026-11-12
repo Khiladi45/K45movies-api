@@ -17,10 +17,11 @@ async function fetchHtml(
   url: string,
   headers: any,
   signal: AbortSignal | undefined,
-): Promise<string> {
+): Promise<{ html: string; url: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const onOuterAbort = () => controller.abort();
+  if (signal?.aborted) controller.abort();
   signal?.addEventListener("abort", onOuterAbort);
   try {
     const res = await axios.get(url, {
@@ -29,7 +30,10 @@ async function fetchHtml(
       timeout: REQUEST_TIMEOUT_MS,
       maxRedirects: 5,
     });
-    return typeof res.data === "string" ? res.data : String(res.data ?? "");
+    return {
+      html: typeof res.data === "string" ? res.data : "",
+      url: res.request?.responseURL || res.request?.res?.responseUrl || url,
+    };
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onOuterAbort);
@@ -55,6 +59,7 @@ async function resolveDirectChain(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25_000);
   const onOuterAbort = () => controller.abort();
+  if (signal?.aborted) controller.abort();
   signal?.addEventListener("abort", onOuterAbort);
 
   try {
@@ -73,6 +78,11 @@ async function resolveDirectChain(
         referer = url;
         url = new URL(location, url).href;
         continue;
+      }
+      url = res.request?.responseURL || res.request?.res?.responseUrl || url;
+      if (res.status >= 200 && res.status < 300 &&
+          /^video\//i.test(res.headers?.["content-type"] || "")) {
+        return { link: url, quality: getQuality(url) };
       }
       if (res.status !== 200 || typeof res.data !== "string") return null;
 
@@ -123,7 +133,12 @@ function resolveWatchPage(
 ): Stream[] {
   const streams: Stream[] = [];
   const add = (link: string, type: string, quality?: string) => {
-    if (!link || streams.some((s) => s.link === link)) return;
+    try {
+      link = new URL(link.replace(/\\\//g, "/").replace(/\\u0026/g, "&").replace(/&amp;/g, "&"), pageUrl).href;
+    } catch {
+      return;
+    }
+    if (!/^https?:\/\//i.test(link) || streams.some((s) => s.link === link)) return;
     streams.push({
       server: `1TamilMV ${streams.length + 1}`,
       link,
@@ -170,8 +185,8 @@ export async function getStream({
   try {
     // Topic URL: collect every [W] watch embed and DIRECT LINK, then resolve.
     if (isTopicUrl(link)) {
-      const html = await fetchHtml(axios, link, headers, signal);
-      const $ = cheerio.load(html);
+      const topic = await fetchHtml(axios, link, headers, signal);
+      const $ = cheerio.load(topic.html, { xml: { xmlMode: false } });
       const watchUrls: string[] = [];
       const directUrls: string[] = [];
       $("div[data-role=commentContent] a[href]").each((_i, el) => {
@@ -189,10 +204,10 @@ export async function getStream({
         }
       });
       for (const watchUrl of watchUrls.slice(0, 3)) {
-        const page = await fetchHtml(axios, watchUrl, headers, signal).catch(
-          () => "",
+        const page = await fetchHtml(axios, watchUrl, { ...headers, Referer: topic.url }, signal).catch(
+          () => null,
         );
-        streams.push(...resolveWatchPage(page, watchUrl, headers));
+        if (page) streams.push(...resolveWatchPage(page.html, page.url, headers));
         if (streams.length >= 2) break;
       }
       for (const directUrl of directUrls.slice(0, 2)) {
@@ -250,17 +265,8 @@ export async function getStream({
     // Shortlink (spoo.me etc.): resolve the redirect before deciding.
     if (isShortLink(link)) {
       try {
-        const html = await fetchHtml(axios, link, headers, signal);
-        streams.push(...resolveWatchPage(html, link, headers));
-        if (streams.length === 0) {
-          streams.push({
-            server: "1TamilMV Embed",
-            link,
-            type: "embed",
-            quality: getQuality(link),
-            headers,
-          });
-        }
+        const page = await fetchHtml(axios, link, headers, signal);
+        streams.push(...resolveWatchPage(page.html, page.url, headers));
         return streams;
       } catch {
         // Dead shortlink (spoo.me entries expire) — nothing to play.
@@ -269,19 +275,9 @@ export async function getStream({
     }
 
     // Direct watch-embed URL.
-    const html = await fetchHtml(axios, link, headers, signal);
-    streams = resolveWatchPage(html, link, headers);
+    const page = await fetchHtml(axios, link, headers, signal);
+    streams = resolveWatchPage(page.html, page.url, headers);
 
-    if (streams.length === 0 && isWatchHost(link)) {
-      // Couldn't unpack the player — hand the raw embed to the frontend.
-      streams.push({
-        server: "1TamilMV Embed",
-        link,
-        type: "embed",
-        quality: getQuality(link),
-        headers,
-      });
-    }
     return streams;
   } catch (err) {
     if (streams.length === 0) throwProviderError("1TamilMV", "stream", err);

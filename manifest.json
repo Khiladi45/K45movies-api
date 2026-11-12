@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-11-07T09:54:42Z",
+  "updatedAt": "2026-11-12T07:02:01Z",
   "providers": [
     {
       "id": "1flex",
@@ -8,6 +8,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/1flex.js",
+      "icon": null
+    },
+    {
+      "id": "1tamilblasters",
+      "name": "1tamilblasters",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/1tamilblasters.js",
       "icon": null
     },
     {
@@ -112,6 +120,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/hdhub4u.js",
+      "icon": null
+    },
+    {
+      "id": "hdmovieslife",
+      "name": "Hdmovieslife",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/hdmovieslife.js",
       "icon": null
     },
     {

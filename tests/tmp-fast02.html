@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download — HDmovieshub.onl - The.Odyssey.2026.iMAX.480p.BluRay.HIN-LiNE-English.ORG.ESubs.x264.mkv</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #090d16;
+            color: #cbd5e1;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            width: 100%;
+            max-width: 560px;
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        /* ── Header ── */
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            background: #090e1a;
+            border-bottom: 1px solid #1e293b;
+        }
+        .hdr-brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            background: #0c1e33;
+            border: 1px solid #1d4ed8;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #38bdf8;
+            text-transform: uppercase;
+        }
+        .hdr-dot {
+            width: 6px; height: 6px;
+            background: #38bdf8;
+            border-radius: 50%;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .hdr-dot { animation: blink 2.2s ease-in-out infinite; }
+        /* ── File Section ── */
+        .file-section {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 20px 16px 16px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .file-icon {
+            width: 52px; height: 52px;
+            border-radius: 10px;
+            background: rgba(168,85,247,0.12);
+            border: 1px solid rgba(168,85,247,0.28);
+            color: #a855f7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .file-info { flex: 1; min-width: 0; }
+        .file-name {
+            font-size: 0.98rem;
+            font-weight: 600;
+            color: #f8fafc;
+            line-height: 1.4;
+            word-break: break-word;
+            margin-bottom: 9px;
+        }
+        .file-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            padding: 3px 8px;
+            border-radius: 4px;
+        }
+        .badge-ext {
+            background: #1e293b;
+            color: #94a3b8;
+            border: 1px solid #334155;
+        }
+        .badge-verified {
+            background: #0c233c;
+            color: #38bdf8;
+            border: 1px solid #1d4ed8;
+            display: flex; align-items: center; gap: 4px;
+        }
+        /* ── Stats Table ── */
+        .stats {
+            border-bottom: 1px solid #1e293b;
+        }
+        .stat-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            border-bottom: 1px solid #172033;
+        }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 0.82rem;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+        .stat-label svg { color: #38bdf8; flex-shrink: 0; }
+        .stat-val { font-size: 0.82rem; font-weight: 600; display: flex; align-items: center; }
+        .node-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #0c233c;
+            color: #38bdf8;
+            border: 1px solid #1d4ed8;
+            padding: 3px 9px;
+            border-radius: 5px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            font-family: ui-monospace, Menlo, "Courier New", monospace;
+            letter-spacing: 0.05em;
+        }
+        .val-success { color: #10b981; }
+        .val-amber { color: #f59e0b; font-family: ui-monospace, Menlo, monospace; }
+        .val-muted { color: #94a3b8; }
+        /* ── Download Area ── */
+        .dl-area { padding: 16px; }
+        .btn-download {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            width: 100%;
+            padding: 14px 20px;
+            border-radius: 8px;
+            border: none;
+            background: #2563eb;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.15s ease;
+            letter-spacing: 0.02em;
+        }
+        .btn-download:hover { background: #1d4ed8; }
+        .btn-download:active { background: #1e40af; }
+        .btn-download.loading { pointer-events: none; opacity: 0.7; }
+        .btn-download.loading .dl-icon { display: none; }
+        .btn-download.loading .spinner { display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            display: none;
+            width: 18px; height: 18px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        .dl-note {
+            display: flex;
+            align-items: flex-start;
+            gap: 9px;
+            margin-top: 10px;
+            padding: 10px 12px;
+            background: #0b1120;
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+            font-size: 0.77rem;
+            color: #94a3b8;
+            line-height: 1.5;
+        }
+        .dl-note svg { color: #38bdf8; flex-shrink: 0; margin-top: 1px; }
+        /* ── Footer ── */
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            border-top: 1px solid #1e293b;
+            background: #090e1a;
+        }
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            color: #64748b;
+        }
+        .footer-left svg { color: #3b82f6; }
+        .footer-left strong { color: #94a3b8; font-weight: 600; }
+        .page-footer {
+            margin-top: 18px;
+            font-size: 0.74rem;
+            color: #64748b;
+            text-align: center;
+            letter-spacing: 0.02em;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+
+        <!-- Header -->
+        <div class="card-header">
+            <span class="hdr-brand">
+                <span class="hdr-dot"></span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                FXShare - Edge Server
+            </span>
+        </div>
+
+        <!-- File Info -->
+        <div class="file-section">
+            <div class="file-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></div>
+            <div class="file-info">
+                <div class="file-name">HDmovieshub.onl - The.Odyssey.2026.iMAX.480p.BluRay.HIN-LiNE-English.ORG.ESubs.x264.mkv</div>
+                <div class="file-badges">
+                    <span class="badge badge-ext">MKV</span>
+                    <span class="badge badge-ext">664.98 MB</span>
+                    <span class="badge badge-verified">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        Verified File
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats">
+            <div class="stat-row">
+                <span class="stat-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="15" x2="23" y2="15"/><line x1="1" y1="9" x2="4" y1="9"/><line x1="1" y1="15" x2="4" y1="15"/></svg>
+                    Data Node
+                </span>
+                <span class="stat-val">
+                    <span class="node-badge">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="15" x2="23" y2="15"/><line x1="1" y1="9" x2="4" y1="9"/><line x1="1" y1="15" x2="4" y1="15"/></svg>
+                        F2A484
+                    </span>
+                </span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    Datacenter
+                </span>
+                <span class="stat-val val-muted">SIN (Singapore)</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+                    Resume
+                </span>
+                <span class="stat-val val-success">Yes, Supported</span>
+            </div>
+            
+            <div class="stat-row">
+                <span class="stat-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    Page Expiry
+                </span>
+                <span class="stat-val val-amber" id="expiryTimer">—</span>
+            </div>
+        </div>
+
+        <!-- Download Button -->
+        <div class="dl-area">
+            <a id="dlBtn" class="btn-download" href="https://fast-02.fxcloud-as.site/dl/WLIPjoCe-Ac-sfnG86YzLzo6Ue7Rr-iKTFKyO3wIR8llKeuZkN02zFhG9csxhYZQAVUvvT74jaytwV4fV_G_Srz3gKuUXYibNLOTCq0xtqeGX3hIOEkIJPchfn6KhMXmsU_mJ5w0N6c5QI1wx6oCf-oj2KfoFdnNS26Zil7VGYq5VKO8_lbQnSGRnsWar4mHG63PIgfm8q2mqChzQhyMUkasuiXf5iRFC3uVS_BwHjMfwAn5eXxRxdRWA9taHQZa5fCWxu4bVxr8FpcD3HBklzNxeO1ZjMrnBcXrGPxfplm3SQ.6290777e067779f74d82f57f0e098cc8d0dfd3dff0c783bee063cb7767143bde/HDmovieshub.onl%20-%20The.Odyssey.2026.iMAX.480p.BluRay.HIN-LiNE-English.ORG.ESubs.x264.mkv?start=1&hash=Cz_GjdLJp1InzkJEsy1lsDo6MhaSVZM_p45J0mzB5wBQKW6qHvrjHXrS-KjcyJ1NPmscOQ"
+               onclick="this.classList.add('loading');">
+                <span class="dl-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                </span>
+                <span class="spinner"></span>
+                <span>Direct Fast Download</span>
+            </a>
+            <div class="dl-note">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                High-speed multi-threaded accelerated streaming with seamless pause &amp; resume support.
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="card-footer">
+            <span class="footer-left">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <strong>FXShare</strong> Accelerator Stream
+            </span>
+        </div>
+    </div>
+
+    <!-- Page Footer -->
+    <footer class="page-footer">
+        Copyright &copy; 2026 - Powered by FXCloud Edge Node
+    </footer>
+
+    <script>
+    (function() {
+        const expiry = 1794307670718;
+        const el = document.getElementById('expiryTimer');
+        const btn = document.getElementById('dlBtn');
+        function tick() {
+            const rem = expiry - Date.now();
+            if (rem <= 0) {
+                el.textContent = 'Expired';
+                el.style.color = '#ef4444';
+                if (btn) {
+                    btn.style.pointerEvents = 'none';
+                    btn.style.opacity = '0.5';
+                    btn.style.background = '#334155';
+                    btn.innerHTML = '<span>Page Session Expired — Refresh Page</span>';
+                }
+                return;
+            }
+            const m = Math.floor(rem / 60000);
+            const s = Math.floor((rem % 60000) / 1000);
+            el.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + ' mins';
+            setTimeout(tick, 1000);
+        }
+        tick();
+    })();
+    </script>
+</body>
+</html>
