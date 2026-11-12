@@ -7,6 +7,7 @@ import {
   isTopicUrl,
   isWatchHost,
   playerSourceFrom,
+  streamCashSource,
   unpackPacked,
 } from "./utils";
 
@@ -151,6 +152,9 @@ function resolveWatchPage(
   // LuluStream titles embed the quality, e.g. "Scene (2026) … - 720p - x264".
   const title = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || "";
 
+  const streamCash = streamCashSource(html);
+  if (streamCash) add(streamCash, "m3u8", getQuality(title));
+
   const unpacked = unpackPacked(html);
   if (unpacked) {
     const source = playerSourceFrom(unpacked);
@@ -203,7 +207,7 @@ export async function getStream({
           directUrls.push(href);
         }
       });
-      for (const watchUrl of watchUrls.slice(0, 3)) {
+      for (const watchUrl of watchUrls.slice(0, 5)) {
         const page = await fetchHtml(axios, watchUrl, { ...headers, Referer: topic.url }, signal).catch(
           () => null,
         );
@@ -275,8 +279,14 @@ export async function getStream({
     }
 
     // Direct watch-embed URL.
-    const page = await fetchHtml(axios, link, headers, signal);
-    streams = resolveWatchPage(page.html, page.url, headers);
+    try {
+      const page = await fetchHtml(axios, link, headers, signal);
+      streams = resolveWatchPage(page.html, page.url, headers);
+    } catch {
+      // Watch hosts disappear frequently; surface an empty result, not a
+      // provider-wide failure, so other rows remain usable.
+      return streams;
+    }
 
     return streams;
   } catch (err) {

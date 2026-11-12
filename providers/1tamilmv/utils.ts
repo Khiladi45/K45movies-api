@@ -8,7 +8,7 @@ export const WATCH_FILTER = "/watch-online/";
 // Third-party video hosts embedded through [W] links. LuluStream clones serve
 // an obfuscated jwplayer config whose packed script hides a direct m3u8.
 export const isWatchHost = (url: string) =>
-  /luluvido\.|lulustream\.|luluvid\.|luvbx\.|mbfile\.|filelions\.|streamruby\.|vidhide\.|dood(?:stream|watch)\./i.test(
+  /luluvido\.|luluvdo\.|lulustream\.|luluvid\.|lulust\.|luvbx\.|mbfile\.|filelions\.|streamruby\.|streamcash\.|vidhide\.|dood(?:stream|watch)\./i.test(
     url,
   );
 
@@ -96,4 +96,21 @@ export const unpackPacked = (html: string): string | null => {
 export const playerSourceFrom = (unpacked: string): string | null => {
   const file = unpacked.match(/(?:file|src)\s*:\s*["']([^"']*(?:\.m3u8|\.mp4|\.mkv)[^"']*)["']/i);
   return file ? file[1] : null;
+};
+
+/**
+ * StreamCash players ship their config as base64 JSON in `window.__PCr`:
+ *   {"vid":"…","src":"https://cdn.streamcash.to/videos/…/index.m3u8",…}
+ * Unlike the LuluStream CDN, this HLS plays outside a browser page.
+ */
+export const streamCashSource = (html: string): string | null => {
+  const encoded = html.match(/window\.__PCr\s*=\s*['"]([^'"]+)['"]/)?.[1];
+  if (!encoded) return null;
+  try {
+    const config = JSON.parse(atob(encoded));
+    const src = typeof config?.src === "string" ? config.src : "";
+    return /^https?:\/\//i.test(src) ? src : null;
+  } catch {
+    return null;
+  }
 };

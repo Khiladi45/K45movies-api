@@ -183,13 +183,13 @@ var init_providerErrors = __esm({
 });
 
 // providers/1tamilmv/utils.ts
-var cleanText, WATCH_FILTER, isWatchHost, isTopicUrl, isShortLink, canonicalTopicUrl, getQuality, displayTitle, unpackPacked, playerSourceFrom;
+var cleanText, WATCH_FILTER, isWatchHost, isTopicUrl, isShortLink, canonicalTopicUrl, getQuality, displayTitle, unpackPacked, playerSourceFrom, streamCashSource;
 var init_utils = __esm({
   "providers/1tamilmv/utils.ts"() {
     "use strict";
     cleanText = (value) => (value || "").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
     WATCH_FILTER = "/watch-online/";
-    isWatchHost = (url) => /luluvido\.|lulustream\.|luluvid\.|luvbx\.|mbfile\.|filelions\.|streamruby\.|vidhide\.|dood(?:stream|watch)\./i.test(
+    isWatchHost = (url) => /luluvido\.|luluvdo\.|lulustream\.|luluvid\.|lulust\.|luvbx\.|mbfile\.|filelions\.|streamruby\.|streamcash\.|vidhide\.|dood(?:stream|watch)\./i.test(
       url
     );
     isTopicUrl = (url) => /\/forums\/topic\//.test(url);
@@ -242,6 +242,18 @@ var init_utils = __esm({
     playerSourceFrom = (unpacked) => {
       const file = unpacked.match(/(?:file|src)\s*:\s*["']([^"']*(?:\.m3u8|\.mp4|\.mkv)[^"']*)["']/i);
       return file ? file[1] : null;
+    };
+    streamCashSource = (html) => {
+      var _a;
+      const encoded = (_a = html.match(/window\.__PCr\s*=\s*['"]([^'"]+)['"]/)) == null ? void 0 : _a[1];
+      if (!encoded) return null;
+      try {
+        const config = JSON.parse(atob(encoded));
+        const src = typeof (config == null ? void 0 : config.src) === "string" ? config.src : "";
+        return /^https?:\/\//i.test(src) ? src : null;
+      } catch (e) {
+        return null;
+      }
     };
   }
 });
@@ -654,6 +666,8 @@ function resolveWatchPage(html, pageUrl, headers) {
     });
   };
   const title = ((_a = html.match(/<title[^>]*>([^<]*)<\/title>/i)) == null ? void 0 : _a[1]) || "";
+  const streamCash = streamCashSource(html);
+  if (streamCash) add(streamCash, "m3u8", getQuality(title));
   const unpacked = unpackPacked(html);
   if (unpacked) {
     const source = playerSourceFrom(unpacked);
@@ -693,11 +707,11 @@ function getStream(_0) {
             directUrls.push(href);
           }
         });
-        for (const watchUrl of watchUrls.slice(0, 3)) {
-          const page2 = yield fetchHtml2(axios, watchUrl, __spreadProps(__spreadValues({}, headers), { Referer: topic.url }), signal).catch(
+        for (const watchUrl of watchUrls.slice(0, 5)) {
+          const page = yield fetchHtml2(axios, watchUrl, __spreadProps(__spreadValues({}, headers), { Referer: topic.url }), signal).catch(
             () => null
           );
-          if (page2) streams.push(...resolveWatchPage(page2.html, page2.url, headers));
+          if (page) streams.push(...resolveWatchPage(page.html, page.url, headers));
           if (streams.length >= 2) break;
         }
         for (const directUrl of directUrls.slice(0, 2)) {
@@ -743,15 +757,19 @@ function getStream(_0) {
       }
       if (isShortLink(link)) {
         try {
-          const page2 = yield fetchHtml2(axios, link, headers, signal);
-          streams.push(...resolveWatchPage(page2.html, page2.url, headers));
+          const page = yield fetchHtml2(axios, link, headers, signal);
+          streams.push(...resolveWatchPage(page.html, page.url, headers));
           return streams;
         } catch (e) {
           return streams;
         }
       }
-      const page = yield fetchHtml2(axios, link, headers, signal);
-      streams = resolveWatchPage(page.html, page.url, headers);
+      try {
+        const page = yield fetchHtml2(axios, link, headers, signal);
+        streams = resolveWatchPage(page.html, page.url, headers);
+      } catch (e) {
+        return streams;
+      }
       return streams;
     } catch (err) {
       if (streams.length === 0) throwProviderError("1TamilMV", "stream", err);

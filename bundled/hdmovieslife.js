@@ -1,7 +1,24 @@
 var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
@@ -465,11 +482,238 @@ var init_meta = __esm({
   }
 });
 
+// providers/extractors/httpMedia.ts
+function httpUrl(href, base) {
+  const value = href == null ? void 0 : href.trim();
+  if (!value || value.startsWith("#")) return;
+  try {
+    const parent = new URL(base);
+    const directory = parent.pathname.endsWith("/") ? parent.pathname : parent.pathname.replace(/[^/]*$/, "");
+    const candidate = value.startsWith("?") ? `${parent.origin}${parent.pathname}${value}` : value.startsWith("//") ? `${parent.protocol}${value}` : /^[a-z][a-z\d+.-]*:/i.test(value) ? value : value.startsWith("/") ? `${parent.origin}${value}` : `${parent.origin}${directory}${value}`;
+    const url = new URL(candidate);
+    if (/^https?:\/\/[^/?#@]+(?=[/?#]|$)/i.test(url.href) && !url.username && !url.password) {
+      return url.href;
+    }
+  } catch (e) {
+    return;
+  }
+}
+function followHeadRedirects(axios, url, headers, signal, onResponse, maxHops = 6) {
+  return __async(this, null, function* () {
+    var _a;
+    let current = url;
+    let referer = "";
+    for (let hop = 0; hop < maxHops; hop++) {
+      const response = yield axios.head(current, {
+        headers: __spreadValues(__spreadValues({}, headers), referer ? { Referer: referer } : {}),
+        signal,
+        timeout: 6e3,
+        maxRedirects: 0,
+        validateStatus: () => true
+      }).catch(() => void 0);
+      if (!response) return;
+      onResponse == null ? void 0 : onResponse(response);
+      const location = (_a = response.headers) == null ? void 0 : _a.location;
+      if (location && response.status >= 300 && response.status < 400) {
+        referer = current;
+        current = new URL(location, current).href;
+        continue;
+      }
+      if (response.status >= 400) return;
+      return responseUrl(response, current);
+    }
+    return current;
+  });
+}
+function mediaExtension(url) {
+  var _a;
+  return (_a = url.match(/\.(m3u8|mpd|mp4|mkv|webm)(?=[?#]|$)/i)) == null ? void 0 : _a[1].toLowerCase();
+}
+function probeMedia(axios, link, headers, signal, requireRange = false) {
+  return __async(this, null, function* () {
+    try {
+      const options = { headers, signal, timeout: 4e3 };
+      const head = yield axios.head(link, options);
+      const mime = String(head.headers["content-type"] || "").split(";")[0].toLowerCase();
+      if (/^(?:application|audio)\/(?:vnd\.apple\.mpegurl|x-mpegurl|mpegurl)$/.test(mime)) return "m3u8";
+      if (mime === "application/dash+xml") return "mpd";
+      const type = mime === "video/x-matroska" || mime === "video/matroska" ? "mkv" : mime === "video/mp4" ? "mp4" : mime === "video/webm" ? "webm" : void 0;
+      if (type && !requireRange) return type;
+      if (!type && mime !== "application/octet-stream") return;
+      try {
+        const range = yield axios.get(link, __spreadProps(__spreadValues({}, options), {
+          headers: __spreadProps(__spreadValues({}, headers), { Range: "bytes=0-63" }),
+          responseType: "arraybuffer",
+          maxContentLength: 1024
+        }));
+        if (range.status === 206 && /^bytes 0-/i.test(String(range.headers["content-range"]))) {
+          const bytes = new Uint8Array(range.data);
+          if (bytes[0] === 26 && bytes[1] === 69 && bytes[2] === 223 && bytes[3] === 163) {
+            return type === "webm" || mediaExtension(link) === "webm" ? "webm" : "mkv";
+          }
+          if (bytes[4] === 102 && bytes[5] === 116 && bytes[6] === 121 && bytes[7] === 112) return "mp4";
+        }
+      } catch (e) {
+      }
+      return type;
+    } catch (e) {
+      return;
+    }
+  });
+}
+var responseUrl;
+var init_httpMedia = __esm({
+  "providers/extractors/httpMedia.ts"() {
+    "use strict";
+    responseUrl = (response, requested) => {
+      var _a, _b, _c;
+      return ((_a = response.request) == null ? void 0 : _a.responseURL) || ((_c = (_b = response.request) == null ? void 0 : _b.res) == null ? void 0 : _c.responseUrl) || requested;
+    };
+  }
+});
+
+// providers/extractors/directFiles.ts
+function pixelDrainDirect(url) {
+  const match = url.match(
+    /pixeldrain\.(?:com|dev)\/(?:u\/|api\/file\/|file\/)([A-Za-z0-9]+)/i
+  );
+  return match ? `https://pixeldrain.dev/api/file/${match[1]}?download` : void 0;
+}
+var init_directFiles = __esm({
+  "providers/extractors/directFiles.ts"() {
+    "use strict";
+  }
+});
+
 // providers/hdmovieslife/stream.ts
 var stream_exports = {};
 __export(stream_exports, {
   getStream: () => getStream
 });
+function resolvePixeldrainMirror(_0, _1, _2, _3) {
+  return __async(this, arguments, function* (link, quality, { axios, cheerio, commonHeaders }, signal) {
+    var _a, _b;
+    const jar = { value: "" };
+    const headers = (extra = {}) => __spreadValues(__spreadValues(__spreadValues({}, commonHeaders), jar.value ? { Cookie: jar.value } : {}), extra);
+    try {
+      const entry = yield axios.get(link, {
+        headers: headers(),
+        signal,
+        timeout: 8e3,
+        validateStatus: () => true
+      });
+      accumulateCookies(jar, entry);
+      const entryUrl = responseUrl(entry, link);
+      if (!isHdlinks(entryUrl)) return;
+      let buttonsHtml = typeof entry.data === "string" && /data-mirror/.test(entry.data) ? entry.data : "";
+      if (!buttonsHtml) {
+        const buttons = yield axios.get(
+          `${entryUrl.split("?")[0]}?action=get_buttons`,
+          {
+            headers: headers({ Referer: entryUrl, "X-Requested-With": "XMLHttpRequest" }),
+            signal,
+            timeout: 8e3,
+            validateStatus: () => true
+          }
+        );
+        accumulateCookies(jar, buttons);
+        buttonsHtml = typeof buttons.data === "string" ? buttons.data : "";
+      }
+      if (!buttonsHtml) return;
+      let $ = cheerio.load(buttonsHtml);
+      let href = $('a[data-mirror="pixeldrain"]').first().attr("href") || "";
+      if (!href) {
+        $("a[href]").each((_i, el) => {
+          const candidate = $(el).attr("href") || "";
+          if (!href && /pixeldrain\./i.test(candidate)) href = candidate;
+        });
+      }
+      if (!href) return;
+      let url = new URL(href, entryUrl).href;
+      let referer = entryUrl;
+      let resolved = "";
+      for (let hop = 0; hop < 6 && !resolved; hop++) {
+        if (signal == null ? void 0 : signal.aborted) return;
+        const final = yield followHeadRedirects(
+          axios,
+          url,
+          headers({ Referer: referer }),
+          signal,
+          (response) => accumulateCookies(jar, response)
+        );
+        if (!final) return;
+        resolved = pixelDrainDirect(final) || "";
+        if (!resolved && mediaExtension(final)) {
+          const fileHeaders2 = __spreadProps(__spreadValues({}, commonHeaders), { Referer: referer });
+          const type2 = yield probeMedia(axios, final, fileHeaders2, signal, true);
+          if (type2) {
+            return { server: "HDMoviesLife PixelDrain", link: final, quality: getQuality(final) || quality, type: type2, headers: fileHeaders2 };
+          }
+        }
+        if (resolved) break;
+        const pageResponse = yield axios.get(final, {
+          headers: headers({ Referer: url }),
+          signal,
+          timeout: 8e3,
+          validateStatus: () => true
+        });
+        accumulateCookies(jar, pageResponse);
+        if (pageResponse.status !== 200 || typeof pageResponse.data !== "string") return;
+        const html = pageResponse.data;
+        const page = cheerio.load(html);
+        const mirrorHref = page('a[data-mirror="pixeldrain"]').first().attr("href") || ((_a = html.match(/href="([^"]*pixeldrain\.[^"]*)"/i)) == null ? void 0 : _a[1]) || "";
+        if (!mirrorHref) {
+          const inline = (_b = html.match(/https?:\/\/pixeldrain\.[^"'\s<>]+/i)) == null ? void 0 : _b[0];
+          if (inline) resolved = pixelDrainDirect(inline) || "";
+          break;
+        }
+        referer = final;
+        url = new URL(String(mirrorHref).replace(/&amp;/g, "&"), final).href;
+      }
+      if (!resolved) return;
+      const fileHeaders = __spreadProps(__spreadValues({}, commonHeaders), { Referer: "https://pixeldrain.dev/" });
+      const type = yield probeMedia(axios, resolved, fileHeaders, signal, true);
+      if (type) {
+        return {
+          server: "HDMoviesLife PixelDrain",
+          link: resolved,
+          type,
+          quality: quality || getQuality(link),
+          headers: fileHeaders
+        };
+      }
+    } catch (e) {
+    }
+    return;
+  });
+}
+function resolveFastDownload(_0, _1, _2, _3) {
+  return __async(this, arguments, function* (link, quality, { axios, cheerio, commonHeaders }, signal) {
+    try {
+      const options = { signal, timeout: 5e3, maxContentLength: 256 * 1024 };
+      const response = yield axios.get(link, __spreadProps(__spreadValues({}, options), { headers: commonHeaders }));
+      const landing = responseUrl(response, link);
+      if (!isHdlinks(landing) || typeof response.data !== "string") return;
+      const $ = cheerio.load(response.data);
+      const payload = $('a[href^="?payload="]').first().attr("href");
+      const next = httpUrl(payload, landing);
+      if (!next) return;
+      const filePage = yield axios.get(next, __spreadProps(__spreadValues({}, options), {
+        headers: __spreadProps(__spreadValues({}, commonHeaders), { Referer: landing })
+      }));
+      const filePageUrl = responseUrl(filePage, next);
+      if (!isFxFilePage(filePageUrl) || typeof filePage.data !== "string") return;
+      const file = cheerio.load(filePage.data);
+      const signed = httpUrl(file('a[href*="start=1"][href*="hash="]').first().attr("href"), filePageUrl);
+      if (!signed || signed.split("?")[0] !== filePageUrl.split("?")[0]) return;
+      const headers = __spreadProps(__spreadValues({}, commonHeaders), { Referer: filePageUrl });
+      const type = yield probeMedia(axios, signed, headers, signal, true);
+      if (type) return { server: "HDMoviesLife Fast Drive", link: signed, quality: getQuality(filePageUrl) || quality, type, headers };
+    } catch (e) {
+      return;
+    }
+  });
+}
 function getStream(_0) {
   return __async(this, arguments, function* ({
     link,
@@ -498,23 +742,51 @@ function getStream(_0) {
           }
         });
       }
-      return [...targets].sort((a, b) => qualityRank(b[1]) - qualityRank(a[1])).map(([url, quality]) => ({
-        server: "HDMoviesLife",
-        link: url,
-        type: "embed",
-        quality,
-        downloadOnly: true
-      }));
+      const ordered = [...targets].sort((a, b) => qualityRank(b[1]) - qualityRank(a[1]));
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      signal == null ? void 0 : signal.addEventListener("abort", cancel);
+      if (signal == null ? void 0 : signal.aborted) cancel();
+      const deadline = setTimeout(cancel, 22e3);
+      try {
+        return yield Promise.all(ordered.map((_02, _1) => __async(null, [_02, _1], function* ([url, quality], index) {
+          const verified = index < 3 && ((yield resolvePixeldrainMirror(url, quality, providerContext, controller.signal)) || (yield resolveFastDownload(url, quality, providerContext, controller.signal)));
+          return verified || {
+            server: "HDMoviesLife (Download Only)",
+            link: url,
+            type: "embed",
+            quality,
+            downloadOnly: true
+          };
+        })));
+      } finally {
+        clearTimeout(deadline);
+        signal == null ? void 0 : signal.removeEventListener("abort", cancel);
+      }
     } catch (err) {
       throwProviderError("HDMoviesLife", "stream", err);
     }
   });
 }
+var isFxFilePage, accumulateCookies;
 var init_stream = __esm({
   "providers/hdmovieslife/stream.ts"() {
     "use strict";
     init_providerErrors();
     init_utils();
+    init_httpMedia();
+    init_directFiles();
+    isFxFilePage = (url) => /^https:\/\/[^./]+\.fxcloud-as\.site\/dl\//i.test(url);
+    accumulateCookies = (jar, response) => {
+      var _a;
+      const header = (_a = response == null ? void 0 : response.headers) == null ? void 0 : _a["set-cookie"];
+      if (!header) return;
+      for (const line of Array.isArray(header) ? header : [header]) {
+        const pair = String(line).split(";")[0];
+        if (!pair || jar.value.split("; ").includes(pair)) continue;
+        jar.value = jar.value ? `${jar.value}; ${pair}` : pair;
+      }
+    };
   }
 });
 

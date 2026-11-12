@@ -118,5 +118,13 @@
   "hdmovieslife": {
     "name": "HDMoviesLife",
     "url": "https://hdmovies.life"
+  },
+  "dvdplay": {
+    "name": "DVDPlay",
+    "url": "http://dvdplay.singles"
+  },
+  "movieswood": {
+    "name": "MoviesWood",
+    "url": "https://movieswood.cloud"
   }
 }

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-11-12T07:02:01Z",
+  "updatedAt": "2026-11-12T11:14:26Z",
   "providers": [
     {
       "id": "1flex",
@@ -107,6 +107,14 @@
       "icon": null
     },
     {
+      "id": "dvdplay",
+      "name": "Dvdplay",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/dvdplay.js",
+      "icon": null
+    },
+    {
       "id": "gokuHD",
       "name": "Goku HD",
       "version": "1.0.0",
@@ -200,6 +208,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/moviesda.js",
+      "icon": null
+    },
+    {
+      "id": "movieswood",
+      "name": "Movieswood",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/movieswood.js",
       "icon": null
     },
     {
