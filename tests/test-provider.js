@@ -389,7 +389,7 @@ async function main() {
     console.log("  npm run test:provider -- mod getPosts");
     console.log("  npm run test:provider -- mod getSearchPosts --rebuild");
     console.log("  npm run test:provider -- uhd getMeta");
-    console.log("  npm run test:provider -- cncVerse getEpisodes");
+    console.log("  npm run test:provider -- disneyPlus getEpisodes");
     console.log("  npm run test:provider -- luxMovies getStream");
     console.log("\nAvailable functions:");
     console.log("  - getPosts       (get posts by filter/category)");

@@ -1,9 +1,10 @@
-// Dev-only end-to-end check for cncVerse. Loads the built bundle and exercises
-// catalog -> posts -> meta -> episodes -> stream -> real segment bytes.
+// Dev-only end-to-end check for the seven NetMirror/CNC studio providers:
+// catalog -> posts -> meta -> stream -> real segment bytes, per provider.
 const axios = require("axios");
 const cheerio = require("cheerio");
-const fs = require("fs");
 const path = require("path");
+
+const PROVIDERS = ["netflix", "primeVideo", "hotstar", "disneyPlus", "pixar", "starWars", "marvel"];
 
 const kv = new Map();
 const providerContext = {
@@ -24,8 +25,6 @@ const providerContext = {
     clear: async () => kv.clear(),
   },
 };
-
-const p = require(path.join(__dirname, "..", "bundled", "cncVerse.js"));
 
 const safe = (u) => String(u || "").replace(/(in=)[^&]+/g, "$1<token>");
 const log = (...a) => console.log(...a.map((x) => (typeof x === "string" ? x : JSON.stringify(x))));
@@ -83,65 +82,53 @@ async function firstSegment(stream) {
   };
 }
 
-(async () => {
-  const studios = await p.catalog({ providerContext });
-  log("CATALOG", studios);
+async function verifyProvider(id) {
+  const p = require(path.join(__dirname, "..", "bundled", `${id}.js`));
+  const started = Date.now();
+  log(`\n===== ${id} =====`);
 
-  for (const entry of studios) {
-    const filter = entry.filter;
-    log(`\n===== ${entry.title} (${filter}) =====`);
-    let posts = [];
-    try {
-      posts = await p.getPosts({
-        filter,
-        page: 1,
-        providerValue: "cncVerse",
-        signal: new AbortController().signal,
-        providerContext,
-      });
-    } catch (e) {
-      log("posts ERROR", e.message);
-      continue;
-    }
-    log("posts", posts.length, posts.slice(0, 3).map((x) => x.title));
-    if (!posts.length) continue;
+  const catalog = await p.catalog({ providerContext });
+  log("catalog", catalog.map((c) => c.title).slice(0, 6));
+  if (!catalog.length) return { id, ok: false, why: "empty catalog" };
 
-    let target = posts[0];
-    let info = null;
+  let posts = [];
+  for (const entry of catalog.slice(0, 2)) {
+    posts = await p.getPosts({
+      filter: entry.filter,
+      page: 1,
+      providerValue: id,
+      signal: new AbortController().signal,
+      providerContext,
+    });
+    if (posts.length) break;
+  }
+  log("posts", posts.length, posts.slice(0, 3).map((x) => x.title));
+  if (!posts.length) return { id, ok: false, why: "no posts" };
+
+  for (const candidate of posts.slice(0, 3)) {
+    let info;
     try {
-      info = await p.getMeta({ link: target.link, provider: "cncVerse", providerContext });
+      info = await p.getMeta({ link: candidate.link, provider: id, providerContext });
     } catch (e) {
-      log("meta ERROR", e.message);
+      log("meta ERROR", candidate.title, e.message);
       continue;
     }
     log("meta", { title: info.title, type: info.type, links: info.linkList.length });
 
     let playLink = null;
-    let label = "";
+    let label = "movie";
     if (info.type === "series") {
       const season = info.linkList.find((l) => l.episodesLink);
-      if (!season) {
-        log("no season link");
-        continue;
-      }
-      let episodes = [];
-      try {
-        episodes = await p.getEpisodes({ url: season.episodesLink, providerContext });
-      } catch (e) {
-        log("episodes ERROR", e.message);
-      }
+      if (!season) continue;
+      const episodes = await p.getEpisodes({ url: season.episodesLink, providerContext });
       log("episodes", episodes.length, episodes.slice(0, 2).map((x) => x.title));
       if (!episodes.length) continue;
       playLink = episodes[0].link;
       label = `episode:${episodes[0].title}`;
     } else {
       playLink = info.linkList[0]?.directLinks?.[0]?.link;
-      label = "movie";
     }
-    if (!playLink) {
-      log("no play link");
-      continue;
-    }
+    if (!playLink) continue;
 
     let streams = [];
     try {
@@ -150,32 +137,41 @@ async function firstSegment(stream) {
       log("stream ERROR", e.message);
       continue;
     }
-    const bad = streams.filter((s) => s.link.includes("220884"));
-    log("streams", streams.length, "abusive", bad.length, streams.map((s) => `${s.server}|${s.quality}`).slice(0, 4));
-    if (!streams.length) {
-      log("PLAYBACK FAIL: no streams", label);
-      continue;
-    }
+    const abusive = streams.filter((s) => s.link.includes("220884"));
+    log("streams", streams.length, "abusive", abusive.length, streams.map((s) => `${s.server}|${s.quality}`).slice(0, 4));
+    if (!streams.length) continue;
+
     const variant = streams.find((s) => !s.server.includes("Auto")) || streams[0];
     try {
       const seg = await firstSegment(variant);
-      log("PLAYBACK", seg.ok ? "PASS" : "FAIL", label, seg);
+      log("PLAYBACK", seg.ok ? "PASS" : "FAIL", label, { ...seg, link: safe(variant.link) });
+      if (seg.ok && abusive.length === 0) {
+        return { id, ok: true, ms: Date.now() - started, title: info.title };
+      }
     } catch (e) {
       log("segment ERROR", e.message);
     }
-    await new Promise((r) => setTimeout(r, 1200));
   }
+  return { id, ok: false, why: "no playable stream" };
+}
 
-  console.log("\n===== SEARCH =====");
-  const found = await p.getSearchPosts({
-    searchQuery: "the office",
-    page: 1,
-    providerValue: "cncVerse",
-    signal: new AbortController().signal,
-    providerContext,
-  });
-  log("search results", found.length, found.slice(0, 6).map((x) => [x.title, x.link.split("|")[1]]));
-  console.log("DONE");
+(async () => {
+  const only = process.argv[2];
+  const results = [];
+  for (const id of PROVIDERS) {
+    if (only && id !== only) continue;
+    try {
+      results.push(await verifyProvider(id));
+    } catch (e) {
+      log("FAIL", id, e.message);
+      results.push({ id, ok: false, why: e.message });
+    }
+  }
+  console.log("\n===== SUMMARY =====");
+  for (const r of results) console.log(r.ok ? `PASS ${r.id} (${r.ms}ms)` : `FAIL ${r.id}: ${r.why}`);
+  const ok = results.filter((r) => r.ok).length;
+  console.log(`${ok}/${results.length} providers playable`);
+  if (ok !== results.length) process.exit(1);
 })().catch((e) => {
   console.error("FATAL", e);
   process.exit(1);

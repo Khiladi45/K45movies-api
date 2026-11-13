@@ -1,7 +1,6 @@
 export const catalog = [
   // Homepage "TOP RELEASES THIS WEEK" widget — the only section whose links
   // ([W] luluvido embeds) are directly streamable.
-  { title: "Watch Online (Latest)", filter: "/watch-online/" },
   {
     title: "Tamil WEB-HD / BluRay",
     filter: "/index.php?/forums/forum/11-web-hd-itunes-hd-bluray/",

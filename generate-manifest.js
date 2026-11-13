@@ -8,7 +8,7 @@ const VERSION = "1.0.0";
 
 // Folder ids whose display name differs from the humanized form.
 const DISPLAY_NAMES = {
-  cncVerse: "CNC Verse",
+  disneyPlus: "Disney+",
 };
 
 // Turn a folder id like "4khdhub" / "cncVerse" into a display name.

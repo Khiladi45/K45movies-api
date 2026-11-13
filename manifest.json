@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-11-13T07:26:42Z",
+  "updatedAt": "2026-11-13T08:27:22Z",
   "providers": [
     {
       "id": "1flex",
@@ -91,11 +91,11 @@
       "icon": null
     },
     {
-      "id": "cncVerse",
-      "name": "CNC Verse",
+      "id": "disneyPlus",
+      "name": "Disney+",
       "version": "1.0.0",
       "description": null,
-      "bundleUrl": "bundled/cncVerse.js",
+      "bundleUrl": "bundled/disneyPlus.js",
       "icon": null
     },
     {
@@ -147,6 +147,14 @@
       "icon": null
     },
     {
+      "id": "hotstar",
+      "name": "Hotstar",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/hotstar.js",
+      "icon": null
+    },
+    {
       "id": "kickAssAnime",
       "name": "Kick Ass Anime",
       "version": "1.0.0",
@@ -176,6 +184,14 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/luxMovies.js",
+      "icon": null
+    },
+    {
+      "id": "marvel",
+      "name": "Marvel",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/marvel.js",
       "icon": null
     },
     {
@@ -243,11 +259,43 @@
       "icon": null
     },
     {
+      "id": "netflix",
+      "name": "Netflix",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/netflix.js",
+      "icon": null
+    },
+    {
+      "id": "pixar",
+      "name": "Pixar",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/pixar.js",
+      "icon": null
+    },
+    {
+      "id": "primeVideo",
+      "name": "Prime Video",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/primeVideo.js",
+      "icon": null
+    },
+    {
       "id": "showbox",
       "name": "Showbox",
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/showbox.js",
+      "icon": null
+    },
+    {
+      "id": "starWars",
+      "name": "Star Wars",
+      "version": "1.0.0",
+      "description": null,
+      "bundleUrl": "bundled/starWars.js",
       "icon": null
     },
     {
