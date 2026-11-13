@@ -56,10 +56,10 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 
-// providers/netMirrorCommon.ts
-var MOBILE_UA, FALLBACK_BASES, TIMEOUT, TOKEN_TTL, TRAY_TTL, getNetMirrorBaseUrl, getNetMirrorMobileHeaders, prefixToOtt, resolveUrl, usableSessionToken, unlockLocks, readSetCookies, extractToken, unlockNetMirrorMobileSession, unlockSharedSession, getNetMirrorCookie, invalidateNetMirrorSession, getPosterUrl, getEpisodePosterUrl, engineCookies, pathFor, netMirrorSearch, homeTrayCache, titleCache, parseHtmlTrays, getCachedHomeTrays, netMirrorGetPosts, netMirrorGetMeta, netMirrorGetEpisodes, qualityFromResolution, qualityFromUrl, subtitlesFromTracks, looksAbusive, fetchPlaylist, fetchMaster, netMirrorGetStream;
+// D:/My projects/Mobile App/K45movies-api/providers/netMirrorCommon.ts
+var MOBILE_UA, FALLBACK_BASES, TIMEOUT, TOKEN_TTL, TRAY_TTL, getNetMirrorBaseUrl, getNetMirrorMobileHeaders, prefixToOtt, resolveUrl, usableSessionToken, unlockLocks, readSetCookies, extractToken, unlockNetMirrorMobileSession, unlockSharedSession, getNetMirrorCookie, invalidateNetMirrorSession, getPosterUrl, getEpisodePosterUrl, engineCookies, pathFor, netMirrorSearch, homeTrayCache, titleCache, homeScopeKey, studioSpotlights, parseHtmlTrays, getCachedHomeTrays, netMirrorGetPosts, netMirrorGetMeta, netMirrorGetEpisodes, qualityFromResolution, qualityFromUrl, subtitlesFromTracks, looksAbusive, fetchPlaylist, fetchMaster, netMirrorGetStream;
 var init_netMirrorCommon = __esm({
-  "providers/netMirrorCommon.ts"() {
+  "D:/My projects/Mobile App/K45movies-api/providers/netMirrorCommon.ts"() {
     "use strict";
     MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 5 Build/TQ3A.230901.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.132 Safari/537.36 /OS.Gatu v3.0";
     FALLBACK_BASES = ["https://net52.cc", "https://net22.cc"];
@@ -137,6 +137,7 @@ var init_netMirrorCommon = __esm({
       const scopeCookie = `hd=on; ott=${ottCookie}`;
       try {
         const homeRes = yield axios.get(`${baseUrl}/mobile/home?app=1`, {
+          withCredentials: false,
           headers: {
             "User-Agent": MOBILE_UA,
             "X-Requested-With": "com.netmirror.app",
@@ -148,7 +149,13 @@ var init_netMirrorCommon = __esm({
         const cookiesArr = readSetCookies(homeRes);
         const initialCookie = cookiesArr.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
         const alreadyValid = extractToken(cookiesArr);
-        if (alreadyValid) return alreadyValid;
+        if (alreadyValid) {
+          try {
+            yield kvStore == null ? void 0 : kvStore.set(`t_hash_t_${ottCookie}`, { token: alreadyValid, ts: Date.now() });
+          } catch (e) {
+          }
+          return alreadyValid;
+        }
         const html = typeof homeRes.data === "string" ? homeRes.data : "";
         const addhash = (_a = html.match(/data-addhash=["']([^"']+)["']/)) == null ? void 0 : _a[1];
         if (!addhash) return void 0;
@@ -161,6 +168,7 @@ var init_netMirrorCommon = __esm({
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
           },
           maxRedirects: 0,
+          withCredentials: false,
           validateStatus: () => true,
           timeout: 8e3
         }).catch(() => {
@@ -188,6 +196,7 @@ var init_netMirrorCommon = __esm({
                   Cookie: pollCookie
                 },
                 validateStatus: () => true,
+                withCredentials: false,
                 timeout: 8e3
               }
             );
@@ -205,7 +214,8 @@ var init_netMirrorCommon = __esm({
                   "X-Requested-With": "com.netmirror.app",
                   Cookie: pollCookie
                 },
-                timeout: TIMEOUT
+                timeout: TIMEOUT,
+                withCredentials: false
               }).catch(() => null);
               const reloadToken = reloadRes ? extractToken(readSetCookies(reloadRes)) : void 0;
               if (reloadToken && kvStore) {
@@ -320,6 +330,13 @@ var init_netMirrorCommon = __esm({
     });
     homeTrayCache = /* @__PURE__ */ new Map();
     titleCache = /* @__PURE__ */ new Map();
+    homeScopeKey = (baseUrl, prefix, studio) => `${baseUrl}:${(studio == null ? void 0 : studio.ottCookie) || prefixToOtt(prefix)}:${(studio == null ? void 0 : studio.studioCookie) || ""}`;
+    studioSpotlights = {
+      disney: "pv",
+      pixar: "pixar",
+      starwars: "starwars",
+      marvel: "marvel"
+    };
     parseHtmlTrays = (html, cheerio) => {
       var _a, _b, _c, _d, _e, _f;
       const trays = [];
@@ -345,7 +362,8 @@ var init_netMirrorCommon = __esm({
             $(el).find(".top10-post, article").each((_j, art) => {
               const a = $(art).find("a[data-post]").first();
               const id = a.attr("data-post") || $(art).attr("data-post");
-              const img = $(art).find("img").attr("data-src") || $(art).find("img").attr("src");
+              const poster = $(art).find("img").last();
+              const img = poster.attr("data-src") || poster.attr("src");
               if (id) items.push({ id, image: img || "", alt: "" });
             });
             if (title && items.length > 0 && !trays.some((t) => t.title.toLowerCase() === title.toLowerCase())) {
@@ -373,19 +391,26 @@ var init_netMirrorCommon = __esm({
       }
       return trays;
     };
-    getCachedHomeTrays = (providerContext, prefix, studio) => __async(null, null, function* () {
+    getCachedHomeTrays = (providerContext, prefix, studio, signal) => __async(null, null, function* () {
+      var _a;
       const ottCookie = (studio == null ? void 0 : studio.ottCookie) || prefixToOtt(prefix);
-      const cacheKey = `${prefix}:${ottCookie}:${(studio == null ? void 0 : studio.studioCookie) || ""}`;
+      const baseUrl = yield getNetMirrorBaseUrl(providerContext);
+      const cacheKey = homeScopeKey(baseUrl, prefix, studio);
       const cached = homeTrayCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < TRAY_TTL) return cached.trays;
       const { axios, cheerio } = providerContext;
-      const baseUrl = yield getNetMirrorBaseUrl(providerContext);
       const url = `${baseUrl}/mobile/home?app=1`;
-      const hasToken = (cookieStr) => /t_hash_t=[^;]+/.test(cookieStr);
-      const fetchTrays = (unlockIfMissing) => __async(null, null, function* () {
-        const cookies = yield getNetMirrorCookie(providerContext, prefix, unlockIfMissing, studio);
+      const fetchHome = () => __async(null, null, function* () {
+        const cookies = yield getNetMirrorCookie(providerContext, prefix, true, studio);
+        if (signal == null ? void 0 : signal.aborted) throw new Error("Catalog request canceled");
+        if (!/(?:^|; )t_hash_t=[^;]+/.test(cookies)) {
+          throw new Error("Could not start a catalog session. Try again.");
+        }
         const res = yield axios.get(url, {
+          signal,
+          withCredentials: false,
           headers: __spreadProps(__spreadValues({}, getNetMirrorMobileHeaders(baseUrl, cookies)), {
+            "Cache-Control": "no-cache",
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language": "en-IN,en-US;q=0.9,en;q=0.8",
             "X-Requested-With": "XMLHttpRequest",
@@ -393,23 +418,33 @@ var init_netMirrorCommon = __esm({
           }),
           timeout: 1e4
         });
-        const html = typeof res.data === "string" ? res.data : "";
-        return { html, trays: parseHtmlTrays(html, cheerio), cookies };
+        return typeof res.data === "string" ? res.data : "";
       });
       try {
-        let { html, trays, cookies } = yield fetchTrays(false);
-        if (!hasToken(cookies) || trays.length === 0 && html.includes("data-addhash")) {
+        let html = yield fetchHome();
+        if (html.includes("data-addhash") && !parseHtmlTrays(html, cheerio).length) {
           yield invalidateNetMirrorSession(providerContext, ottCookie);
-          ({ trays, cookies } = yield fetchTrays(true));
+          html = yield fetchHome();
         }
-        if (trays.length > 0 && hasToken(cookies)) {
-          homeTrayCache.set(cacheKey, { trays, timestamp: Date.now() });
-          return trays;
+        const spotlight = (_a = html.match(/\/mobile\/img\/(pv|pixar|starwars|marvel)-bg\.jpg\b/i)) == null ? void 0 : _a[1];
+        const expectedSpotlight = (studio == null ? void 0 : studio.studioCookie) && studioSpotlights[studio.studioCookie];
+        if (expectedSpotlight && spotlight !== expectedSpotlight || ottCookie === "hs" && spotlight) {
+          throw new Error("The catalog response did not match this studio. Try again.");
         }
+        const posterScope = prefix || "nf";
+        const trays = parseHtmlTrays(html, cheerio).flatMap(({ title, items }) => {
+          const scopedItems = items.filter(
+            ({ image }) => image.startsWith(`https://imgcdn.kim/${posterScope}/`) || image.startsWith(`//imgcdn.kim/${posterScope}/`)
+          );
+          return scopedItems.length ? [{ title, items: scopedItems }] : [];
+        });
+        if (!trays.length) throw new Error("The catalog response did not match this provider. Try again.");
+        homeTrayCache.set(cacheKey, { trays, timestamp: Date.now() });
+        return trays;
       } catch (err) {
-        console.error(`getCachedHomeTrays error [${prefix}]:`, err);
+        if (cached && !(signal == null ? void 0 : signal.aborted)) return cached.trays;
+        throw err;
       }
-      return cached ? cached.trays : [];
     });
     netMirrorGetPosts = (_0) => __async(null, [_0], function* ({
       filter,
@@ -419,7 +454,6 @@ var init_netMirrorCommon = __esm({
       providerContext,
       studio
     }) {
-      var _a;
       try {
         if (page > 1) return [];
         const { axios } = providerContext;
@@ -427,58 +461,33 @@ var init_netMirrorCommon = __esm({
         const prefixPath = pathFor(prefix);
         const t = Math.round(Date.now() / 1e3);
         const cleanFilter = (filter || "").trim().toLowerCase();
-        const trays = yield getCachedHomeTrays(providerContext, prefix, studio);
-        let matchedTray = trays.find((tr) => tr.title.toLowerCase() === cleanFilter) || trays.find((tr) => tr.title.toLowerCase().includes(cleanFilter)) || trays[0];
-        if (matchedTray && matchedTray.items.length > 0) {
-          const cookies2 = yield engineCookies({ providerContext, prefix, studio });
-          const itemsToFetch = matchedTray.items.filter(
-            (it) => {
-              var _a2;
-              return !titleCache.has(it.id) && !((_a2 = it.alt) == null ? void 0 : _a2.trim());
+        const trays = yield getCachedHomeTrays(providerContext, prefix, studio, signal);
+        const matchedTray = trays.find((tray) => tray.title.toLowerCase() === cleanFilter);
+        if (!matchedTray) return [];
+        const cookies = yield engineCookies({ providerContext, prefix, studio }, false);
+        const posts = yield Promise.all(matchedTray.items.map((_02) => __async(null, [_02], function* ({ id, alt, image }) {
+          const titleKey = `${homeScopeKey(baseUrl, prefix, studio)}:${id}`;
+          let title = titleCache.get(titleKey) || (alt == null ? void 0 : alt.trim());
+          if (!title) {
+            try {
+              const { data } = yield axios.get(
+                `${baseUrl}/mobile/${prefixPath}post.php?id=${encodeURIComponent(id)}&t=${t}`,
+                { signal, withCredentials: false, headers: getNetMirrorMobileHeaders(baseUrl, cookies), timeout: 6e3 }
+              );
+              title = typeof (data == null ? void 0 : data.title) === "string" ? data.title.trim() : "";
+              if (title) titleCache.set(titleKey, title);
+            } catch (e) {
             }
-          );
-          yield Promise.all(
-            itemsToFetch.map((it) => __async(null, null, function* () {
-              var _a2;
-              try {
-                const postRes = yield axios.get(
-                  `${baseUrl}/mobile/${prefixPath}post.php?id=${it.id}&t=${t}`,
-                  { headers: getNetMirrorMobileHeaders(baseUrl, cookies2), timeout: 6e3 }
-                );
-                if ((_a2 = postRes.data) == null ? void 0 : _a2.title) titleCache.set(it.id, postRes.data.title);
-              } catch (e) {
-              }
-            }))
-          );
-          return matchedTray.items.map((it) => {
-            var _a2;
-            const title = titleCache.get(it.id) || ((_a2 = it.alt) == null ? void 0 : _a2.trim()) || `Item ${it.id}`;
-            return {
-              title,
-              link: `${it.id}|${prefix}|${encodeURIComponent(title)}`,
-              image: it.image || getPosterUrl(it.id, prefix),
-              aspectRatio: prefix === "pv" ? 16 / 9 : void 0
-            };
-          });
-        }
-        const cookies = yield engineCookies({ providerContext, prefix, studio });
-        const res = yield axios.get(
-          `${baseUrl}/mobile/${prefixPath}search.php?s=${encodeURIComponent(filter)}&t=${t}`,
-          { signal, headers: getNetMirrorMobileHeaders(baseUrl, cookies), timeout: TIMEOUT }
-        );
-        const results = ((_a = res.data) == null ? void 0 : _a.searchResult) || [];
-        return results.filter((item) => item == null ? void 0 : item.id).map((item) => {
-          const id = String(item.id);
-          const title = (item == null ? void 0 : item.t) || `ID: ${id}`;
-          titleCache.set(id, title);
+          }
+          if (!title) return null;
           return {
             title,
             link: `${id}|${prefix}|${encodeURIComponent(title)}`,
-            image: getPosterUrl(id, prefix),
-            tag: (item == null ? void 0 : item.y) || ((item == null ? void 0 : item.r) && item.r !== "Series" ? item.r : void 0),
+            image: resolveUrl(image, baseUrl),
             aspectRatio: prefix === "pv" ? 16 / 9 : void 0
           };
-        });
+        })));
+        return posts.filter((post) => post !== null);
       } catch (err) {
         console.error(`netMirrorGetPosts error [${prefix}]:`, err);
         return [];
@@ -753,7 +762,7 @@ var init_netMirrorCommon = __esm({
       const serverName = prefix === "pv" ? "Prime Video" : prefix === "hs" ? "Disney+/Hotstar" : "Netflix";
       const streamLinks = [];
       if (!title) {
-        const cachedTitle = titleCache.get(id);
+        const cachedTitle = titleCache.get(`${homeScopeKey(baseUrl, prefix, studio)}:${id}`);
         if (cachedTitle) title = cachedTitle;
       }
       const buildStreams = (cookies) => __async(null, null, function* () {
@@ -827,10 +836,10 @@ var init_netMirrorCommon = __esm({
   }
 });
 
-// providers/cncStudios.ts
+// D:/My projects/Mobile App/K45movies-api/providers/cncStudios.ts
 var STUDIOS, studioOf, studioOptions, clearSessionsIfRequested, makeCatalog, makeGetPosts, makeGetSearchPosts, makeGetMeta, makeGetEpisodes, makeGetStream;
 var init_cncStudios = __esm({
-  "providers/cncStudios.ts"() {
+  "D:/My projects/Mobile App/K45movies-api/providers/cncStudios.ts"() {
     "use strict";
     init_netMirrorCommon();
     STUDIOS = {
@@ -859,7 +868,8 @@ var init_cncStudios = __esm({
       }
     });
     makeCatalog = (key) => (..._0) => __async(null, [..._0], function* ({
-      providerContext
+      providerContext,
+      signal
     } = {}) {
       if (!providerContext) return [];
       yield clearSessionsIfRequested(providerContext);
@@ -867,7 +877,8 @@ var init_cncStudios = __esm({
       const trays = yield getCachedHomeTrays(
         providerContext,
         studio.prefix,
-        studioOptions(studio)
+        studioOptions(studio),
+        signal
       );
       const seen = /* @__PURE__ */ new Set();
       const catalog2 = [];
@@ -970,7 +981,7 @@ var init_cncStudios = __esm({
   }
 });
 
-// providers/pixar/catalog.ts
+// D:/My projects/Mobile App/K45movies-api/providers/pixar/catalog.ts
 var catalog_exports = {};
 __export(catalog_exports, {
   catalog: () => catalog,
@@ -978,7 +989,7 @@ __export(catalog_exports, {
 });
 var catalog, genres;
 var init_catalog = __esm({
-  "providers/pixar/catalog.ts"() {
+  "D:/My projects/Mobile App/K45movies-api/providers/pixar/catalog.ts"() {
     "use strict";
     init_cncStudios();
     catalog = makeCatalog("pixar");
@@ -986,7 +997,7 @@ var init_catalog = __esm({
   }
 });
 
-// providers/pixar/posts.ts
+// D:/My projects/Mobile App/K45movies-api/providers/pixar/posts.ts
 var posts_exports = {};
 __export(posts_exports, {
   getPosts: () => getPosts,
@@ -994,7 +1005,7 @@ __export(posts_exports, {
 });
 var getPosts, getSearchPosts;
 var init_posts = __esm({
-  "providers/pixar/posts.ts"() {
+  "D:/My projects/Mobile App/K45movies-api/providers/pixar/posts.ts"() {
     "use strict";
     init_cncStudios();
     getPosts = makeGetPosts("pixar");
@@ -1002,42 +1013,42 @@ var init_posts = __esm({
   }
 });
 
-// providers/pixar/meta.ts
+// D:/My projects/Mobile App/K45movies-api/providers/pixar/meta.ts
 var meta_exports = {};
 __export(meta_exports, {
   getMeta: () => getMeta
 });
 var getMeta;
 var init_meta = __esm({
-  "providers/pixar/meta.ts"() {
+  "D:/My projects/Mobile App/K45movies-api/providers/pixar/meta.ts"() {
     "use strict";
     init_cncStudios();
     getMeta = makeGetMeta("pixar");
   }
 });
 
-// providers/pixar/stream.ts
+// D:/My projects/Mobile App/K45movies-api/providers/pixar/stream.ts
 var stream_exports = {};
 __export(stream_exports, {
   getStream: () => getStream
 });
 var getStream;
 var init_stream = __esm({
-  "providers/pixar/stream.ts"() {
+  "D:/My projects/Mobile App/K45movies-api/providers/pixar/stream.ts"() {
     "use strict";
     init_cncStudios();
     getStream = makeGetStream("pixar");
   }
 });
 
-// providers/pixar/episodes.ts
+// D:/My projects/Mobile App/K45movies-api/providers/pixar/episodes.ts
 var episodes_exports = {};
 __export(episodes_exports, {
   getEpisodes: () => getEpisodes
 });
 var getEpisodes;
 var init_episodes = __esm({
-  "providers/pixar/episodes.ts"() {
+  "D:/My projects/Mobile App/K45movies-api/providers/pixar/episodes.ts"() {
     "use strict";
     init_cncStudios();
     getEpisodes = makeGetEpisodes("pixar");

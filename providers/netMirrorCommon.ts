@@ -134,6 +134,7 @@ export const unlockNetMirrorMobileSession = async (
   const scopeCookie = `hd=on; ott=${ottCookie}`;
   try {
     const homeRes = await axios.get(`${baseUrl}/mobile/home?app=1`, {
+      withCredentials: false,
       headers: {
         "User-Agent": MOBILE_UA,
         "X-Requested-With": "com.netmirror.app",
@@ -150,7 +151,12 @@ export const unlockNetMirrorMobileSession = async (
       .join("; ");
 
     const alreadyValid = extractToken(cookiesArr);
-    if (alreadyValid) return alreadyValid;
+    if (alreadyValid) {
+      try {
+        await kvStore?.set(`t_hash_t_${ottCookie}`, { token: alreadyValid, ts: Date.now() });
+      } catch {}
+      return alreadyValid;
+    }
 
     const html = typeof homeRes.data === "string" ? homeRes.data : "";
     const addhash = html.match(/data-addhash=["']([^"']+)["']/)?.[1];
@@ -166,6 +172,7 @@ export const unlockNetMirrorMobileSession = async (
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
         maxRedirects: 0,
+        withCredentials: false,
         validateStatus: () => true,
         timeout: 8000,
       })
@@ -197,6 +204,7 @@ export const unlockNetMirrorMobileSession = async (
               Cookie: pollCookie,
             },
             validateStatus: () => true,
+            withCredentials: false,
             timeout: 8000,
           }
         );
@@ -218,6 +226,7 @@ export const unlockNetMirrorMobileSession = async (
                 Cookie: pollCookie,
               },
               timeout: TIMEOUT,
+              withCredentials: false,
             })
             .catch(() => null);
           const reloadToken = reloadRes ? extractToken(readSetCookies(reloadRes)) : undefined;
@@ -423,6 +432,15 @@ interface HomeTray { title: string; items: HomeTrayItem[]; }
 
 const homeTrayCache = new Map<string, { trays: HomeTray[]; timestamp: number }>();
 const titleCache = new Map<string, string>();
+const homeScopeKey = (baseUrl: string, prefix: NetMirrorOtt, studio?: StudioOptions) =>
+  `${baseUrl}:${studio?.ottCookie || prefixToOtt(prefix)}:${studio?.studioCookie || ""}`;
+
+const studioSpotlights: Record<string, string> = {
+  disney: "pv",
+  pixar: "pixar",
+  starwars: "starwars",
+  marvel: "marvel",
+};
 
 const parseHtmlTrays = (html: string, cheerio: any): HomeTray[] => {
   const trays: HomeTray[] = [];
@@ -449,7 +467,8 @@ const parseHtmlTrays = (html: string, cheerio: any): HomeTray[] => {
         $(el).find(".top10-post, article").each((_j: number, art: any) => {
           const a = $(art).find("a[data-post]").first();
           const id = a.attr("data-post") || $(art).attr("data-post");
-          const img = $(art).find("img").attr("data-src") || $(art).find("img").attr("src");
+          const poster = $(art).find("img").last();
+          const img = poster.attr("data-src") || poster.attr("src");
           if (id) items.push({ id, image: img || "", alt: "" });
         });
         if (title && items.length > 0 &&
@@ -483,24 +502,29 @@ const parseHtmlTrays = (html: string, cheerio: any): HomeTray[] => {
 export const getCachedHomeTrays = async (
   providerContext: ProviderContext,
   prefix: NetMirrorOtt,
-  studio?: StudioOptions
+  studio?: StudioOptions,
+  signal?: AbortSignal
 ): Promise<HomeTray[]> => {
   const ottCookie = studio?.ottCookie || prefixToOtt(prefix);
-  const cacheKey = `${prefix}:${ottCookie}:${studio?.studioCookie || ""}`;
+  const baseUrl = await getNetMirrorBaseUrl(providerContext);
+  const cacheKey = homeScopeKey(baseUrl, prefix, studio);
   const cached = homeTrayCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < TRAY_TTL) return cached.trays;
 
   const { axios, cheerio } = providerContext;
-  const baseUrl = await getNetMirrorBaseUrl(providerContext);
   const url = `${baseUrl}/mobile/home?app=1`;
-
-  const hasToken = (cookieStr: string) => /t_hash_t=[^;]+/.test(cookieStr);
-
-  const fetchTrays = async (unlockIfMissing: boolean) => {
-    const cookies = await getNetMirrorCookie(providerContext, prefix, unlockIfMissing, studio);
+  const fetchHome = async () => {
+    const cookies = await getNetMirrorCookie(providerContext, prefix, true, studio);
+    if (signal?.aborted) throw new Error("Catalog request canceled");
+    if (!/(?:^|; )t_hash_t=[^;]+/.test(cookies)) {
+      throw new Error("Could not start a catalog session. Try again.");
+    }
     const res = await axios.get(url, {
+      signal,
+      withCredentials: false,
       headers: {
         ...getNetMirrorMobileHeaders(baseUrl, cookies),
+        "Cache-Control": "no-cache",
         Accept:
           "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-IN,en-US;q=0.9,en;q=0.8",
@@ -509,27 +533,40 @@ export const getCachedHomeTrays = async (
       },
       timeout: 10000,
     });
-    const html = typeof res.data === "string" ? res.data : "";
-    return { html, trays: parseHtmlTrays(html, cheerio), cookies };
+    return typeof res.data === "string" ? res.data : "";
   };
 
   try {
-    let { html, trays, cookies } = await fetchTrays(false);
-    // Without a token the server often serves a generic/Netflix default page,
-    // which would poison the per-studio tray cache for every provider.
-    if (!hasToken(cookies) || (trays.length === 0 && html.includes("data-addhash"))) {
+    let html = await fetchHome();
+    if (html.includes("data-addhash") && !parseHtmlTrays(html, cheerio).length) {
       await invalidateNetMirrorSession(providerContext, ottCookie);
-      ({ trays, cookies } = await fetchTrays(true));
+      html = await fetchHome();
     }
-    if (trays.length > 0 && hasToken(cookies)) {
-      homeTrayCache.set(cacheKey, { trays, timestamp: Date.now() });
-      return trays;
+    // The home endpoint can return Netflix even with a session cookie. The
+    // poster paths identify the OTT, and the spotlight identifies each studio.
+    const spotlight = html.match(/\/mobile\/img\/(pv|pixar|starwars|marvel)-bg\.jpg\b/i)?.[1];
+    const expectedSpotlight = studio?.studioCookie && studioSpotlights[studio.studioCookie];
+    if ((expectedSpotlight && spotlight !== expectedSpotlight) ||
+        (ottCookie === "hs" && spotlight)) {
+      throw new Error("The catalog response did not match this studio. Try again.");
     }
+    const posterScope = prefix || "nf";
+    const trays = parseHtmlTrays(html, cheerio).flatMap(({ title, items }) => {
+      const scopedItems = items.filter(({ image }) =>
+        image.startsWith(`https://imgcdn.kim/${posterScope}/`) ||
+        image.startsWith(`//imgcdn.kim/${posterScope}/`)
+      );
+      return scopedItems.length ? [{ title, items: scopedItems }] : [];
+    });
+    if (!trays.length) {
+      throw new Error("The catalog response did not match this provider. Try again.");
+    }
+    homeTrayCache.set(cacheKey, { trays, timestamp: Date.now() });
+    return trays;
   } catch (err) {
-    console.error(`getCachedHomeTrays error [${prefix}]:`, err);
+    if (cached && !signal?.aborted) return cached.trays;
+    throw err;
   }
-
-  return cached ? cached.trays : [];
 };
 
 export const netMirrorGetPosts = async ({
@@ -555,61 +592,33 @@ export const netMirrorGetPosts = async ({
     const prefixPath = pathFor(prefix);
     const t = Math.round(Date.now() / 1000);
     const cleanFilter = (filter || "").trim().toLowerCase();
+    const trays = await getCachedHomeTrays(providerContext, prefix, studio, signal);
+    const matchedTray = trays.find((tray) => tray.title.toLowerCase() === cleanFilter);
+    if (!matchedTray) return [];
 
-    const trays = await getCachedHomeTrays(providerContext, prefix, studio);
-    let matchedTray =
-      trays.find((tr) => tr.title.toLowerCase() === cleanFilter) ||
-      trays.find((tr) => tr.title.toLowerCase().includes(cleanFilter)) ||
-      trays[0];
-
-    if (matchedTray && matchedTray.items.length > 0) {
-      const cookies = await engineCookies({ providerContext, prefix, studio });
-      const itemsToFetch = matchedTray.items.filter(
-        (it) => !titleCache.has(it.id) && !it.alt?.trim()
-      );
-      await Promise.all(
-        itemsToFetch.map(async (it) => {
-          try {
-            const postRes = await axios.get(
-              `${baseUrl}/mobile/${prefixPath}post.php?id=${it.id}&t=${t}`,
-              { headers: getNetMirrorMobileHeaders(baseUrl, cookies), timeout: 6000 }
-            );
-            if (postRes.data?.title) titleCache.set(it.id, postRes.data.title);
-          } catch {}
-        })
-      );
-
-      return matchedTray.items.map((it) => {
-        const title = titleCache.get(it.id) || it.alt?.trim() || `Item ${it.id}`;
-        return {
-          title,
-          link: `${it.id}|${prefix}|${encodeURIComponent(title)}`,
-          image: it.image || getPosterUrl(it.id, prefix),
-          aspectRatio: prefix === "pv" ? 16 / 9 : undefined,
-        };
-      });
-    }
-
-    const cookies = await engineCookies({ providerContext, prefix, studio });
-    const res = await axios.get(
-      `${baseUrl}/mobile/${prefixPath}search.php?s=${encodeURIComponent(filter)}&t=${t}`,
-      { signal, headers: getNetMirrorMobileHeaders(baseUrl, cookies), timeout: TIMEOUT }
-    );
-    const results = res.data?.searchResult || [];
-    return results
-      .filter((item: any) => item?.id)
-      .map((item: any) => {
-        const id = String(item.id);
-        const title = item?.t || `ID: ${id}`;
-        titleCache.set(id, title);
-        return {
-          title,
-          link: `${id}|${prefix}|${encodeURIComponent(title)}`,
-          image: getPosterUrl(id, prefix),
-          tag: item?.y || (item?.r && item.r !== "Series" ? item.r : undefined),
-          aspectRatio: prefix === "pv" ? 16 / 9 : undefined,
-        };
-      });
+    const cookies = await engineCookies({ providerContext, prefix, studio }, false);
+    const posts = await Promise.all(matchedTray.items.map(async ({ id, alt, image }) => {
+      const titleKey = `${homeScopeKey(baseUrl, prefix, studio)}:${id}`;
+      let title = titleCache.get(titleKey) || alt?.trim();
+      if (!title) {
+        try {
+          const { data } = await axios.get(
+            `${baseUrl}/mobile/${prefixPath}post.php?id=${encodeURIComponent(id)}&t=${t}`,
+            { signal, withCredentials: false, headers: getNetMirrorMobileHeaders(baseUrl, cookies), timeout: 6000 }
+          );
+          title = typeof data?.title === "string" ? data.title.trim() : "";
+          if (title) titleCache.set(titleKey, title);
+        } catch {}
+      }
+      if (!title) return null;
+      return {
+        title,
+        link: `${id}|${prefix}|${encodeURIComponent(title)}`,
+        image: resolveUrl(image, baseUrl),
+        aspectRatio: prefix === "pv" ? 16 / 9 : undefined,
+      };
+    }));
+    return posts.filter((post) => post !== null);
   } catch (err) {
     console.error(`netMirrorGetPosts error [${prefix}]:`, err);
     return [];
@@ -951,7 +960,7 @@ export const netMirrorGetStream = async ({
   const streamLinks: Stream[] = [];
 
   if (!title) {
-    const cachedTitle = titleCache.get(id);
+    const cachedTitle = titleCache.get(`${homeScopeKey(baseUrl, prefix, studio)}:${id}`);
     if (cachedTitle) title = cachedTitle;
   }
 

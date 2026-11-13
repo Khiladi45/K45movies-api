@@ -14,21 +14,24 @@ const EXPECTED = {
   marvel: { path: "/mobile/hs/search.php", ott: "dp", studio: "marvel", prefix: "hs", trays: ["MCU Movie Timeline", "Marvel Legacy Movies"] },
 };
 
-const htmlFor = (trays) =>
-  `<html><body>${trays
+const htmlFor = ({ trays, prefix, studio }) =>
+  `<html><body>${studio ? `<div class="spotlight" style="background:url('/mobile/img/${studio === "disney" ? "pv" : studio}-bg.jpg')"></div>` : ""}${trays
     .map(
       (title, t) =>
         `<div class="tray-container"><h2>${title}</h2>${[0, 1]
           .map(
             (i) =>
-              `<article><a href="/mobile/post.php?id=${encodeURIComponent(title + "-" + i)}" data-post="${title}-${i}"><img data-src="https://img/${title}-${i}.jpg" alt="${title} #${i}"></a></article>`
+              `<article><a data-post="${title}-${i}"><img data-src="https://imgcdn.kim/${prefix || "nf"}/${title}-${i}.jpg" alt=""></a></article>`
           )
           .join("")}</div>`
     )
-    .join("")}</body></html>`;
+    .join("")}${prefix !== "hs" ? `<div id="top10"><span>Top 10</span>
+      <div class="top10-post" data-post="ranked"><img src="/mobile/img/num1.svg"><img data-src="https://imgcdn.kim/${prefix || "nf"}/ranked.jpg"></div>
+    </div>` : ""}</body></html>`;
 
 const makeContext = (requests) => {
   const kv = new Map();
+  const control = { homeScope: undefined, metadataUnavailable: false };
   const context = {
     cheerio,
     commonHeaders: {},
@@ -49,15 +52,22 @@ const makeContext = (requests) => {
           const cookie = opts.headers?.Cookie || "";
           const studio = /studio=([a-z]+)/.exec(cookie)?.[1];
           const ott = /ott=([a-z]+)/.exec(cookie)?.[1] || "nf";
-          const key = studio ? `${ott}:${studio}` : ott;
+          const key = control.homeScope ?? (studio ? `${ott}:${studio}` : ott);
           const spec = Object.entries(EXPECTED)
             .map(([id, value]) => ({ id, value }))
             .find(({ value }) => (value.studio ? `${value.ott}:${value.studio}` : value.ott) === key);
-          return { data: htmlFor(spec ? spec.value.trays : ["Home"]) };
+          if (!cookie.includes("t_hash_t=")) {
+            return {
+              data: htmlFor(EXPECTED.netflix),
+              headers: { "set-cookie": [`t_hash_t=test-${ott}; Path=/`] },
+            };
+          }
+          assert.strictEqual(opts.withCredentials, false);
+          return { data: htmlFor(spec.value) };
         }
         if (url.includes("post.php")) {
           const id = decodeURIComponent(new URL(url).searchParams.get("id") || "");
-          return { data: { title: id.replace(/-\d+$/, "") } };
+          return { data: control.metadataUnavailable ? {} : { title: id.replace(/-\d+$/, "") } };
         }
         if (url.includes("search.php")) {
           const query = new URL(url).searchParams.get("s") || "";
@@ -67,7 +77,7 @@ const makeContext = (requests) => {
       },
     },
   };
-  return { context, kv };
+  return { context, kv, control };
 };
 
 (async () => {
@@ -82,29 +92,51 @@ const makeContext = (requests) => {
     }
 
     const requests = [];
-    const { context, kv } = makeContext(requests);
-    kv.set(`t_hash_t_${expected.ott}`, { token: "test-token", ts: Date.now() });
+    const { context, kv, control } = makeContext(requests);
+    await assert.rejects(
+      bundle.catalog({ providerContext: { ...context, axios: { get: async () => ({ data: htmlFor(EXPECTED.netflix) }) } } }),
+      /Could not start a catalog session/,
+    );
+    if (id !== "netflix") {
+      control.homeScope = expected.studio && id !== "disneyPlus" ? "dp:disney" : "nf";
+      await assert.rejects(bundle.catalog({ providerContext: context }), /did not match/);
+      control.homeScope = undefined;
+    }
 
     const catalog = await bundle.catalog({ providerContext: context });
-    assert.deepStrictEqual(catalog.map((c) => c.title), expected.trays, `${id} catalog trays`);
+    assert.ok(kv.has(`t_hash_t_${expected.ott}`));
+    assert.deepStrictEqual(
+      catalog.map((c) => c.title),
+      expected.prefix === "hs" ? expected.trays : [...expected.trays, "Top 10"],
+      `${id} catalog trays`,
+    );
     assertions++;
     const first = catalog[0].title;
     if (!seenFirstTrays.has(first)) seenFirstTrays.set(first, id);
     else assert.fail(`${id} shares its first home tray "${first}" with ${seenFirstTrays.get(first)}`);
 
-    const posts = await bundle.getPosts({
-      filter: catalog[1].title,
+    const postArgs = {
       page: 1,
       providerValue: id,
       signal: new AbortController().signal,
       providerContext: context,
-    });
+    };
+    control.metadataUnavailable = true;
+    assert.deepStrictEqual(await bundle.getPosts({ ...postArgs, filter: catalog[1].filter }), []);
+    control.metadataUnavailable = false;
+    assert.deepStrictEqual(await bundle.getPosts({ ...postArgs, filter: "missing row" }), []);
+    assert.ok(!requests.some((r) => r.url.includes("search.php")), "home rows never invoke search");
+    const posts = await bundle.getPosts({ ...postArgs, filter: catalog[1].filter });
     assert.ok(posts.length > 0, `${id} getPosts returned items`);
     assert.ok(
       posts.every((p) => p.link.split("|")[1] === expected.prefix),
       `${id} links carry prefix "${expected.prefix}": ${posts[0].link}`
     );
     assert.ok(posts.every((p) => p.title.startsWith(expected.trays[1])), `${id} posts belong to the requested tray`);
+    if (expected.prefix !== "hs") {
+      const [ranked] = await bundle.getPosts({ ...postArgs, filter: "Top 10" });
+      assert.equal(ranked.image, `https://imgcdn.kim/${expected.prefix || "nf"}/ranked.jpg`);
+    }
     assertions += 2;
 
     const search = await bundle.getSearchPosts({

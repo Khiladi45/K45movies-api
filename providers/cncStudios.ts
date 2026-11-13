@@ -83,6 +83,7 @@ export const makeCatalog =
   (key: StudioKey): CatalogList =>
   async ({
     providerContext,
+    signal,
   }: { signal?: AbortSignal; providerContext?: ProviderContext } = {}): Promise<Catalog[]> => {
     if (!providerContext) return [];
     await clearSessionsIfRequested(providerContext);
@@ -90,7 +91,8 @@ export const makeCatalog =
     const trays = await getCachedHomeTrays(
       providerContext,
       studio.prefix,
-      studioOptions(studio)
+      studioOptions(studio),
+      signal
     );
     const seen = new Set<string>();
     const catalog: Catalog[] = [];
