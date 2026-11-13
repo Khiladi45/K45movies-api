@@ -494,6 +494,8 @@ export const getCachedHomeTrays = async (
   const baseUrl = await getNetMirrorBaseUrl(providerContext);
   const url = `${baseUrl}/mobile/home?app=1`;
 
+  const hasToken = (cookieStr: string) => /t_hash_t=[^;]+/.test(cookieStr);
+
   const fetchTrays = async (unlockIfMissing: boolean) => {
     const cookies = await getNetMirrorCookie(providerContext, prefix, unlockIfMissing, studio);
     const res = await axios.get(url, {
@@ -508,16 +510,18 @@ export const getCachedHomeTrays = async (
       timeout: 10000,
     });
     const html = typeof res.data === "string" ? res.data : "";
-    return { html, trays: parseHtmlTrays(html, cheerio) };
+    return { html, trays: parseHtmlTrays(html, cheerio), cookies };
   };
 
   try {
-    let { html, trays } = await fetchTrays(false);
-    if (trays.length === 0 && html.includes("data-addhash")) {
+    let { html, trays, cookies } = await fetchTrays(false);
+    // Without a token the server often serves a generic/Netflix default page,
+    // which would poison the per-studio tray cache for every provider.
+    if (!hasToken(cookies) || (trays.length === 0 && html.includes("data-addhash"))) {
       await invalidateNetMirrorSession(providerContext, ottCookie);
-      ({ trays } = await fetchTrays(true));
+      ({ trays, cookies } = await fetchTrays(true));
     }
-    if (trays.length > 0) {
+    if (trays.length > 0 && hasToken(cookies)) {
       homeTrayCache.set(cacheKey, { trays, timestamp: Date.now() });
       return trays;
     }

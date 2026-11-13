@@ -381,6 +381,7 @@ var init_netMirrorCommon = __esm({
       const { axios, cheerio } = providerContext;
       const baseUrl = yield getNetMirrorBaseUrl(providerContext);
       const url = `${baseUrl}/mobile/home?app=1`;
+      const hasToken = (cookieStr) => /t_hash_t=[^;]+/.test(cookieStr);
       const fetchTrays = (unlockIfMissing) => __async(null, null, function* () {
         const cookies = yield getNetMirrorCookie(providerContext, prefix, unlockIfMissing, studio);
         const res = yield axios.get(url, {
@@ -393,15 +394,15 @@ var init_netMirrorCommon = __esm({
           timeout: 1e4
         });
         const html = typeof res.data === "string" ? res.data : "";
-        return { html, trays: parseHtmlTrays(html, cheerio) };
+        return { html, trays: parseHtmlTrays(html, cheerio), cookies };
       });
       try {
-        let { html, trays } = yield fetchTrays(false);
-        if (trays.length === 0 && html.includes("data-addhash")) {
+        let { html, trays, cookies } = yield fetchTrays(false);
+        if (!hasToken(cookies) || trays.length === 0 && html.includes("data-addhash")) {
           yield invalidateNetMirrorSession(providerContext, ottCookie);
-          ({ trays } = yield fetchTrays(true));
+          ({ trays, cookies } = yield fetchTrays(true));
         }
-        if (trays.length > 0) {
+        if (trays.length > 0 && hasToken(cookies)) {
           homeTrayCache.set(cacheKey, { trays, timestamp: Date.now() });
           return trays;
         }
