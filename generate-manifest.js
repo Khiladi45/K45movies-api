@@ -6,8 +6,14 @@ const outputFile = path.join(__dirname, "manifest.json");
 
 const VERSION = "1.0.0";
 
-// Turn a folder id like "4khdhub" / "netflixMirror" into a display name.
+// Folder ids whose display name differs from the humanized form.
+const DISPLAY_NAMES = {
+  cncVerse: "CNC Verse",
+};
+
+// Turn a folder id like "4khdhub" / "cncVerse" into a display name.
 function humanize(id) {
+  if (DISPLAY_NAMES[id]) return DISPLAY_NAMES[id];
   return id
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[-_]+/g, " ")

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-11-12T11:14:26Z",
+  "updatedAt": "2026-11-13T07:26:42Z",
   "providers": [
     {
       "id": "1flex",
@@ -91,11 +91,11 @@
       "icon": null
     },
     {
-      "id": "disneyMirror",
-      "name": "Disney Mirror",
+      "id": "cncVerse",
+      "name": "CNC Verse",
       "version": "1.0.0",
       "description": null,
-      "bundleUrl": "bundled/disneyMirror.js",
+      "bundleUrl": "bundled/cncVerse.js",
       "icon": null
     },
     {
@@ -240,22 +240,6 @@
       "version": "1.0.0",
       "description": null,
       "bundleUrl": "bundled/mxplayer.js",
-      "icon": null
-    },
-    {
-      "id": "netflixMirror",
-      "name": "Netflix Mirror",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/netflixMirror.js",
-      "icon": null
-    },
-    {
-      "id": "primeMirror",
-      "name": "Prime Mirror",
-      "version": "1.0.0",
-      "description": null,
-      "bundleUrl": "bundled/primeMirror.js",
       "icon": null
     },
     {

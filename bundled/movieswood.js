@@ -473,7 +473,7 @@ function resolveStart(_0, _1, _2, _3, _4) {
     });
     if (redirected && redirected !== target) return redirected;
     const response = yield axios.get(target, {
-      headers,
+      headers: __spreadProps(__spreadValues({}, headers), { Range: "bytes=0-65535" }),
       signal,
       timeout: 1e4,
       maxRedirects: 0,
